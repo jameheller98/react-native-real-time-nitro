@@ -1,0 +1,14 @@
+# Downloaded source code
+libwebsockets/
+mbedtls/
+
+# Build artifacts
+build/
+ios/
+android/
+
+# Backup files
+*.bak
+
+# macOS
+.DS_Store
