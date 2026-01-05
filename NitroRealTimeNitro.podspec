@@ -22,23 +22,33 @@ Pod::Spec.new do |s|
     "cpp/**/*.{hpp,cpp}",
   ]
 
-  
+  # Bundle CA certificates for SSL/TLS
+  s.resource_bundles = {
+    'NitroRealTimeNitro' => ['ios/cacert.pem']
+  }
+
   s.public_header_files = "ios/**/*.h"
-  # libwebsockets - 3rd party library
-  s.vendored_frameworks = "3rdparty/ios/libwebsockets.xcframework"
+
+  # libwebsockets and mbedTLS - 3rd party libraries
+  s.vendored_frameworks = [
+    "3rdparty/ios/libwebsockets.xcframework",
+    "3rdparty/ios/mbedtls.xcframework",
+    "3rdparty/ios/mbedx509.xcframework",
+    "3rdparty/ios/mbedcrypto.xcframework",
+  ]
 
   # Build settings
   s.pod_target_xcconfig = {
     # C++ standard
     # "CLANG_CXX_LANGUAGE_STANDARD" => "c++11",
     # "CLANG_CXX_LIBRARY" => "libc++",
-    
-    # Header search paths for libwebsockets
+
+    # Header search paths for libwebsockets (mbedTLS headers included in XCFramework)
     "HEADER_SEARCH_PATHS" => "$(PODS_TARGET_SRCROOT)/3rdparty/ios/libwebsockets.xcframework/ios-arm64/Headers"
-    
+
     # # Other C++ flags
     # "OTHER_CPLUSPLUSFLAGS" => "-fmodules -fcxx-modules",
-    
+
     # # GCC Preprocessor (fixes some header issues)
     # "GCC_PREPROCESSOR_DEFINITIONS" => "$(inherited)"
   }

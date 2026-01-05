@@ -31,6 +31,7 @@ namespace margelo::nitro::realtimenitro {
       prototype.registerHybridMethod("sendBinary", &HybridWebSocketSpec::sendBinary);
       prototype.registerHybridMethod("close", &HybridWebSocketSpec::close);
       prototype.registerHybridMethod("setPingInterval", &HybridWebSocketSpec::setPingInterval);
+      prototype.registerHybridMethod("setCAPath", &HybridWebSocketSpec::setCAPath);
     });
   }
 

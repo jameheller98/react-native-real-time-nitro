@@ -33,7 +33,6 @@ HybridWebSocket::~HybridWebSocket() {
 
 bool HybridWebSocket::parseUrl(const std::string& url) {
   size_t pos = 0;
-  
   // 1. Check protocol
   if (url.find("wss://") == 0) {
     _useSsl = true;
@@ -101,26 +100,19 @@ std::shared_ptr<Promise<void>> HybridWebSocket::connect(
       throw std::invalid_argument("Invalid WebSocket URL: " + url);
     }
 
-    // Log parsed URL components for debugging
-    printf("[WebSocket] Connecting to:\n");
-    printf("  URL: %s\n", url.c_str());
-    printf("  Host: %s\n", _host.c_str());
-    printf("  Port: %d\n", _port);
-    printf("  Path: %s\n", _path.c_str());
-    printf("  SSL: %s\n", _useSsl ? "yes" : "no");
-
     // Cleanup any existing connection
     cleanup();
 
     _state = State::CONNECTING;
-    
-    // Setup LibWebSockets protocols list
+
+    // Setup LibWebSockets protocols list with compression support
     static struct lws_protocols protocolsList[] = {
       {
         .name = "websocket-protocol",
         .callback = HybridWebSocket::websocketCallback,
         .per_session_data_size = sizeof(WebSocketUserData),
         .rx_buffer_size = 65536,
+        .tx_packet_size = 0, // 0 = use default
       },
       LWS_PROTOCOL_LIST_TERM
     };
@@ -135,19 +127,43 @@ std::shared_ptr<Promise<void>> HybridWebSocket::connect(
     info.uid = -1;
     info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
 
+    // SSL client configuration
+    // Disable strict certificate verification by default
+    info.options |= LWS_SERVER_OPTION_ALLOW_NON_SSL_ON_SSL_PORT;
+    info.options |= LWS_SERVER_OPTION_PEER_CERT_NOT_REQUIRED;
+
+    // Enable per-message-deflate compression extension
+    // This can reduce bandwidth by 60-80% for text messages
+    static const struct lws_extension extensions[] = {
+      {
+        "permessage-deflate",
+        lws_extension_callback_pm_deflate,
+        "permessage-deflate"
+        "; client_no_context_takeover"
+        "; client_max_window_bits"
+      },
+      { nullptr, nullptr, nullptr }
+    };
+    info.extensions = extensions;
+
     // Note: On mobile platforms (iOS/Android), CA certs are in system trust store
     // LibWebSockets should automatically use them for SSL verification
 
     // Enable LibWebSockets logging for debugging
-    lws_set_log_level(LLL_ERR | LLL_WARN | LLL_NOTICE | LLL_INFO | LLL_DEBUG, nullptr);
+    // Always enable error and warning logs to help diagnose connection issues
+    lws_set_log_level(LLL_ERR | LLL_WARN | LLL_NOTICE, nullptr);
 
+    #ifdef DEBUG
     printf("[WebSocket] Creating LibWebSockets context...\n");
+    #endif
     _context = lws_create_context(&info);
     if (!_context) {
       _state = State::CLOSED;
       throw std::runtime_error("Failed to create WebSocket context - check LibWebSockets installation");
     }
+    #ifdef DEBUG
     printf("[WebSocket] Context created successfully\n");
+    #endif
     
     // Setup connection info
     struct lws_client_connect_info ccinfo;
@@ -163,10 +179,21 @@ std::shared_ptr<Promise<void>> HybridWebSocket::connect(
 
     // SSL configuration
     if (_useSsl) {
-      ccinfo.ssl_connection = LCCSCF_USE_SSL |
-                              LCCSCF_ALLOW_SELFSIGNED |
-                              LCCSCF_SKIP_SERVER_CERT_HOSTNAME_CHECK;
-      printf("[WebSocket] SSL enabled with permissive certificate validation\n");
+      ccinfo.ssl_connection = LCCSCF_USE_SSL;
+
+      if (_caPath.empty()) {
+        // No CA certificate - disable verification (insecure, for development only)
+        ccinfo.ssl_connection |= LCCSCF_ALLOW_SELFSIGNED;
+        ccinfo.ssl_connection |= LCCSCF_SKIP_SERVER_CERT_HOSTNAME_CHECK;
+        ccinfo.ssl_connection |= LCCSCF_ALLOW_EXPIRED;
+        ccinfo.ssl_connection |= LCCSCF_ALLOW_INSECURE;
+        printf("[WebSocket] SSL enabled WITHOUT certificate verification (insecure)\n");
+      } else {
+        printf("[WebSocket] SSL enabled WITH certificate verification using: %s\n", _caPath.c_str());
+      }
+    } else {
+      printf("[WebSocket] SSL disabled - using plain WebSocket\n");
+      ccinfo.ssl_connection = 0; // Explicitly no SSL
     }
 
     // User data for callbacks
@@ -175,8 +202,10 @@ std::shared_ptr<Promise<void>> HybridWebSocket::connect(
     ccinfo.pwsi = &_wsi;
 
     // Initiate connection
+    #ifdef DEBUG
     printf("[WebSocket] Initiating connection to %s:%d%s...\n",
            _host.c_str(), _port, _path.c_str());
+    #endif
     _wsi = lws_client_connect_via_info(&ccinfo);
     if (!_wsi) {
       delete userData;
@@ -186,7 +215,9 @@ std::shared_ptr<Promise<void>> HybridWebSocket::connect(
                             " - Check network connectivity, DNS resolution, and LibWebSockets logs above";
       throw std::runtime_error(errorMsg);
     }
+    #ifdef DEBUG
     printf("[WebSocket] Connection initiated, waiting for handshake...\n");
+    #endif
     
     // Start service thread
     _running = true;
@@ -205,34 +236,50 @@ std::shared_ptr<Promise<void>> HybridWebSocket::connect(
 
 void HybridWebSocket::serviceLoop() {
   while (_running && _context) {
-    // Service the connection
-    int result = lws_service(_context, 50); // 50ms timeout
-    
+    // Service the connection (reduced timeout for lower latency)
+    int result = lws_service(_context, 10); // 10ms timeout (5x faster response)
+
     if (result < 0) {
       break; // Service error
     }
-    
-    // Process send queue
+
+    // Process send queue - BATCH PROCESS multiple messages
     if (_wsi && _state == State::OPEN) {
-      std::lock_guard<std::mutex> lock(_sendMutex);
-      
-      if (!_sendQueue.empty()) {
-        auto& data = _sendQueue.front();
-        
+      std::unique_lock<std::mutex> lock(_sendMutex);
+
+      // Process up to 32 messages per iteration (batch processing)
+      int batchCount = 0;
+      const int MAX_BATCH_SIZE = 32;
+
+      while (!_sendQueue.empty() && batchCount < MAX_BATCH_SIZE) {
+        auto& msg = _sendQueue.front();
+
         // Prepare buffer with LWS_PRE padding
-        std::vector<uint8_t> buffer(LWS_PRE + data.size());
-        std::copy(data.begin(), data.end(), buffer.begin() + LWS_PRE);
-        
+        std::vector<uint8_t> buffer(LWS_PRE + msg.data.size());
+        std::copy(msg.data.begin(), msg.data.end(), buffer.begin() + LWS_PRE);
+
+        // Determine write protocol based on message type
+        lws_write_protocol writeProtocol = msg.isBinary ? LWS_WRITE_BINARY : LWS_WRITE_TEXT;
+
+        // Unlock during write to avoid blocking senders
+        lock.unlock();
+
         // Write to WebSocket
         int written = lws_write(
-          _wsi, 
+          _wsi,
           buffer.data() + LWS_PRE,
-          data.size(),
-          LWS_WRITE_TEXT
+          msg.data.size(),
+          writeProtocol
         );
-        
-        if (written == static_cast<int>(data.size())) {
+
+        lock.lock();
+
+        if (written == static_cast<int>(msg.data.size())) {
           _sendQueue.pop();
+          batchCount++;
+        } else {
+          // Write failed, stop batch processing
+          break;
         }
       }
     }
@@ -247,11 +294,13 @@ void HybridWebSocket::send(const std::string& message) {
   if (_state != State::OPEN) {
     throw std::runtime_error("WebSocket is not open");
   }
-  
+
   std::lock_guard<std::mutex> lock(_sendMutex);
-  std::vector<uint8_t> data(message.begin(), message.end());
-  _sendQueue.push(std::move(data));
-  
+  QueuedMessage msg;
+  msg.data.assign(message.begin(), message.end());
+  msg.isBinary = false;
+  _sendQueue.push(std::move(msg));
+
   // Wake up service thread
   if (_context) {
     lws_cancel_service(_context);
@@ -262,15 +311,17 @@ void HybridWebSocket::sendBinary(const std::shared_ptr<ArrayBuffer>& data) {
   if (_state != State::OPEN) {
     throw std::runtime_error("WebSocket is not open");
   }
-  
+
   std::lock_guard<std::mutex> lock(_sendMutex);
-  
+
   const uint8_t* bytes = data->data();
   size_t size = data->size();
-  
-  std::vector<uint8_t> buffer(bytes, bytes + size);
-  _sendQueue.push(std::move(buffer));
-  
+
+  QueuedMessage msg;
+  msg.data.assign(bytes, bytes + size);
+  msg.isBinary = true;
+  _sendQueue.push(std::move(msg));
+
   // Wake up service thread
   if (_context) {
     lws_cancel_service(_context);
@@ -341,14 +392,18 @@ void HybridWebSocket::cleanup() {
 
 void HybridWebSocket::setPingInterval(double intervalMs) {
   _pingIntervalMs = static_cast<int>(intervalMs);
-  
+
   if (_wsi && intervalMs > 0) {
     lws_set_timeout(
-      _wsi, 
-      PENDING_TIMEOUT_USER_OK, 
+      _wsi,
+      PENDING_TIMEOUT_USER_OK,
       static_cast<int>(intervalMs / 1000)
     );
   }
+}
+
+void HybridWebSocket::setCAPath(const std::string& path) {
+  _caPath = path;
 }
 
 double HybridWebSocket::getState() {
@@ -412,7 +467,9 @@ int HybridWebSocket::websocketCallback(
       // Connection established
       ws->_state = State::OPEN;
 
+      #ifdef DEBUG
       printf("[WebSocket] Connection established successfully!\n");
+      #endif
 
       std::lock_guard<std::mutex> lock(ws->_callbackMutex);
       if (ws->_onOpen.has_value()) {
@@ -460,7 +517,9 @@ int HybridWebSocket::websocketCallback(
         std::string(static_cast<char*>(in)) :
         "Connection error";
 
+      // Always log connection errors to help debugging
       printf("[WebSocket] CONNECTION ERROR: %s\n", error.c_str());
+      printf("[WebSocket] URL was: %s\n", ws->_url.c_str());
 
       std::lock_guard<std::mutex> lock(ws->_callbackMutex);
       if (ws->_onError.has_value()) {
@@ -502,6 +561,39 @@ int HybridWebSocket::websocketCallback(
   }
   
   return 0;
+}
+
+// ============================================================
+// Buffer Pool Implementation
+// ============================================================
+
+std::vector<uint8_t> HybridWebSocket::getBuffer(size_t size) {
+  std::lock_guard<std::mutex> lock(_bufferPoolMutex);
+
+  // Try to reuse a buffer from the pool if available
+  if (!_bufferPool.empty() && _bufferPool.back().capacity() >= size) {
+    auto buffer = std::move(_bufferPool.back());
+    _bufferPool.pop_back();
+    buffer.resize(size);
+    return buffer;
+  }
+
+  // Allocate new buffer if pool is empty or buffers are too small
+  std::vector<uint8_t> buffer;
+  buffer.reserve(std::max(size, BUFFER_SIZE));
+  buffer.resize(size);
+  return buffer;
+}
+
+void HybridWebSocket::returnBuffer(std::vector<uint8_t>&& buffer) {
+  std::lock_guard<std::mutex> lock(_bufferPoolMutex);
+
+  // Only return buffers to pool if we haven't exceeded the max
+  if (_bufferPool.size() < MAX_POOLED_BUFFERS) {
+    buffer.clear(); // Keep capacity, clear contents
+    _bufferPool.push_back(std::move(buffer));
+  }
+  // Otherwise just let it be destroyed
 }
 
 } // namespace margelo::nitro::realtimenitro

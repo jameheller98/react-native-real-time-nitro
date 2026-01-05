@@ -69,6 +69,7 @@ namespace margelo::nitro::realtimenitro {
       virtual void sendBinary(const std::shared_ptr<ArrayBuffer>& data) = 0;
       virtual void close(std::optional<double> code, const std::optional<std::string>& reason) = 0;
       virtual void setPingInterval(double intervalMs) = 0;
+      virtual void setCAPath(const std::string& path) = 0;
 
     protected:
       // Hybrid Setup

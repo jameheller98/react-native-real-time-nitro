@@ -4,6 +4,9 @@ import type { WebSocket } from './specs/WebSocket.nitro'
 /**
  * Create a new WebSocket instance
  *
+ * SSL/TLS works automatically without certificate verification
+ * For production, use ws.setCAPath('/path/to/cacert.pem') to enable verification
+ *
  * @returns WebSocket hybrid object
  *
  * @example

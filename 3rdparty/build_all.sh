@@ -98,21 +98,25 @@ main() {
     # Build mbedTLS (required for SSL support on iOS; Android builds it internally)
     if [ "$BUILD_IOS" = true ]; then
         log_info ""
-        log_info "Step 2: Building mbedTLS..."
+        log_info "Step 3: Building mbedTLS..."
         ./build_mbedtls.sh --ios
     fi
 
     # Build for iOS
     if [ "$BUILD_IOS" = true ]; then
         log_info ""
-        log_info "Step 3: Building libwebsockets for iOS..."
+        log_info "Step 4: Building libwebsockets for iOS..."
         ./build_ios.sh
+
+        log_info ""
+        log_info "Step 5: Creating mbedTLS XCFrameworks..."
+        ./create_mbedtls_xcframework.sh
     fi
 
     # Build for Android (includes mbedTLS)
     if [ "$BUILD_ANDROID" = true ]; then
         log_info ""
-        log_info "Step 4: Building for Android..."
+        log_info "Step 6: Building for Android..."
         ./build_android.sh
     fi
     
@@ -122,7 +126,10 @@ main() {
     log_info "Output locations:"
     if [ "$BUILD_IOS" = true ]; then
         log_info "  iOS libwebsockets: ${SCRIPT_DIR}/ios/libwebsockets.xcframework"
-        log_info "  iOS mbedTLS:       ${SCRIPT_DIR}/ios/mbedtls/"
+        log_info "  iOS mbedTLS XCFrameworks:"
+        log_info "    - ${SCRIPT_DIR}/ios/mbedtls.xcframework"
+        log_info "    - ${SCRIPT_DIR}/ios/mbedx509.xcframework"
+        log_info "    - ${SCRIPT_DIR}/ios/mbedcrypto.xcframework"
     fi
     if [ "$BUILD_ANDROID" = true ]; then
         log_info "  Android:           ${SCRIPT_DIR}/android/"

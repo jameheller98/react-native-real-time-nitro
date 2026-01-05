@@ -132,4 +132,12 @@ export interface WebSocket extends HybridObject<{
    * @param intervalMs - Ping interval in milliseconds (0 to disable)
    */
   setPingInterval(intervalMs: number): void
+
+  /**
+   * Set CA certificate file path for SSL/TLS verification
+   *
+   * @param path - Absolute path to CA certificate file (PEM format)
+   *              Pass empty string to disable certificate verification
+   */
+  setCAPath(path: string): void
 }

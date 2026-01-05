@@ -19,13 +19,9 @@ export default function RootLayout() {
   const colorScheme = useColorScheme()
 
   useEffect(() => {
-    const socket = new WebSocket('wss://echo.websocket.org')
-
-    socket.onopen = () => {
-      console.log('WebSocket connected1')
-    }
-
     const ws = createWebSocket()
+
+    ws.setCAPath('');
 
     ws.connect('wss://echo.websocket.org')
 
@@ -34,7 +30,7 @@ export default function RootLayout() {
     }
 
     ws.onError = (e) => {
-      console.log('WebSocket connected', e)
+      console.log('WebSocket error', e)
     }
   }, [])
 

@@ -96,7 +96,12 @@ public:
    * Set ping interval for keep-alive
    */
   void setPingInterval(double intervalMs) override;
-  
+
+  /**
+   * Set CA certificate path for SSL verification
+   */
+  void setCAPath(const std::string& path) override;
+
   // Getters
   double getState() override;
   std::string getUrl() override;
@@ -146,8 +151,13 @@ private:
   // ============================================================
   // Message queue (thread-safe)
   // ============================================================
-  
-  std::queue<std::vector<uint8_t>> _sendQueue;
+
+  struct QueuedMessage {
+    std::vector<uint8_t> data;
+    bool isBinary;
+  };
+
+  std::queue<QueuedMessage> _sendQueue;
   std::mutex _sendMutex;
   
   // ============================================================
@@ -171,8 +181,18 @@ private:
   // ============================================================
   // Configuration
   // ============================================================
-  
+
   int _pingIntervalMs = 30000; // 30 seconds default
+  std::string _caPath;  // CA certificate path (empty = disable verification)
+
+  // ============================================================
+  // Buffer pool for reducing allocations
+  // ============================================================
+
+  std::vector<std::vector<uint8_t>> _bufferPool;
+  std::mutex _bufferPoolMutex;
+  static constexpr size_t MAX_POOLED_BUFFERS = 10;
+  static constexpr size_t BUFFER_SIZE = 4096;
   
   // ============================================================
   // Private methods
@@ -198,12 +218,22 @@ private:
    * LibWebSockets callback handler (static)
    */
   static int websocketCallback(
-    struct lws* wsi, 
+    struct lws* wsi,
     enum lws_callback_reasons reason,
-    void* user, 
-    void* in, 
+    void* user,
+    void* in,
     size_t len
   );
+
+  /**
+   * Get buffer from pool or allocate new one
+   */
+  std::vector<uint8_t> getBuffer(size_t size);
+
+  /**
+   * Return buffer to pool for reuse
+   */
+  void returnBuffer(std::vector<uint8_t>&& buffer);
 };
 
 } // namespace margelo::nitro::realtimenitro
