@@ -127,8 +127,24 @@ build_platform() {
     
     cd "${PLATFORM_BUILD_DIR}"
     
-    # Find mbedTLS (for SSL support on mobile)
-    local MBEDTLS_ROOT=$(brew --prefix mbedtls 2>/dev/null || echo "")
+    # Find mbedTLS built for iOS
+    local MBEDTLS_IOS_ROOT="${SCRIPT_DIR}/ios/mbedtls"
+
+    # Verify mbedTLS is available
+    if [ ! -d "${MBEDTLS_IOS_ROOT}/include/mbedtls" ]; then
+        log_error "mbedTLS for iOS not found. Build it first with: ./build_mbedtls.sh"
+        exit 1
+    fi
+
+    # Select appropriate library variant based on platform
+    local MBEDTLS_LIB_PREFIX
+    if [ "${PLATFORM}" == "OS64" ]; then
+        MBEDTLS_LIB_PREFIX="device"
+    else
+        MBEDTLS_LIB_PREFIX="simulator"
+    fi
+
+    log_info "Using mbedTLS from: ${MBEDTLS_IOS_ROOT} (${MBEDTLS_LIB_PREFIX})"
 
     # Configure with CMake
     cmake "${LWS_SOURCE}" \
@@ -138,12 +154,12 @@ build_platform() {
         -DCMAKE_OSX_ARCHITECTURES="${ARCH}" \
         -DCMAKE_OSX_DEPLOYMENT_TARGET="${IOS_DEPLOYMENT_TARGET}" \
         -DCMAKE_INSTALL_PREFIX="${PLATFORM_OUTPUT_DIR}" \
-        -DCMAKE_C_FLAGS="-fembed-bitcode" \
-        -DCMAKE_CXX_FLAGS="-fembed-bitcode" \
+        -DCMAKE_C_FLAGS="-fembed-bitcode -Wno-undef -Wno-sign-conversion -I${MBEDTLS_IOS_ROOT}/include" \
+        -DCMAKE_CXX_FLAGS="-fembed-bitcode -Wno-undef -Wno-sign-conversion -I${MBEDTLS_IOS_ROOT}/include" \
         -DLWS_WITH_SSL=${ENABLE_SSL} \
         -DLWS_WITH_MBEDTLS=ON \
-        -DLWS_MBEDTLS_LIBRARIES="${MBEDTLS_ROOT}/lib/libmbedtls.a;${MBEDTLS_ROOT}/lib/libmbedx509.a;${MBEDTLS_ROOT}/lib/libmbedcrypto.a" \
-        -DLWS_MBEDTLS_INCLUDE_DIRS="${MBEDTLS_ROOT}/include" \
+        -DLWS_MBEDTLS_LIBRARIES="${MBEDTLS_IOS_ROOT}/lib/${MBEDTLS_LIB_PREFIX}-libmbedtls.a;${MBEDTLS_IOS_ROOT}/lib/${MBEDTLS_LIB_PREFIX}-libmbedx509.a;${MBEDTLS_IOS_ROOT}/lib/${MBEDTLS_LIB_PREFIX}-libmbedcrypto.a" \
+        -DLWS_MBEDTLS_INCLUDE_DIRS="${MBEDTLS_IOS_ROOT}/include" \
         -DLWS_WITH_SHARED=OFF \
         -DLWS_WITH_STATIC=ON \
         -DLWS_WITHOUT_TESTAPPS=ON \

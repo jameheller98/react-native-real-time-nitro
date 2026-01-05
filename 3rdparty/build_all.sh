@@ -80,31 +80,39 @@ main() {
     # Clean if requested
     if [ "$CLEAN" = true ]; then
         log_info "Cleaning..."
+        ./build_mbedtls.sh --clean 2>/dev/null || true
         rm -rf build ios android
         log_success "Clean complete"
         exit 0
     fi
-    
+
     # Download sources
     log_info "Step 1: Downloading sources..."
     ./download.sh
-    
+
     if [ "$DOWNLOAD_ONLY" = true ]; then
         log_success "Download complete"
         exit 0
     fi
-    
+
+    # Build mbedTLS (required for SSL support on iOS; Android builds it internally)
+    if [ "$BUILD_IOS" = true ]; then
+        log_info ""
+        log_info "Step 2: Building mbedTLS..."
+        ./build_mbedtls.sh --ios
+    fi
+
     # Build for iOS
     if [ "$BUILD_IOS" = true ]; then
         log_info ""
-        log_info "Step 2: Building for iOS..."
+        log_info "Step 3: Building libwebsockets for iOS..."
         ./build_ios.sh
     fi
-    
-    # Build for Android
+
+    # Build for Android (includes mbedTLS)
     if [ "$BUILD_ANDROID" = true ]; then
         log_info ""
-        log_info "Step 3: Building for Android..."
+        log_info "Step 4: Building for Android..."
         ./build_android.sh
     fi
     
@@ -113,10 +121,11 @@ main() {
     log_info ""
     log_info "Output locations:"
     if [ "$BUILD_IOS" = true ]; then
-        log_info "  iOS:     ${SCRIPT_DIR}/ios/libwebsockets.xcframework"
+        log_info "  iOS libwebsockets: ${SCRIPT_DIR}/ios/libwebsockets.xcframework"
+        log_info "  iOS mbedTLS:       ${SCRIPT_DIR}/ios/mbedtls/"
     fi
     if [ "$BUILD_ANDROID" = true ]; then
-        log_info "  Android: ${SCRIPT_DIR}/android/"
+        log_info "  Android:           ${SCRIPT_DIR}/android/"
     fi
 }
 

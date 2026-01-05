@@ -27,7 +27,7 @@ LWS_SOURCE="${SCRIPT_DIR}/libwebsockets"
 MBEDTLS_SOURCE="${SCRIPT_DIR}/mbedtls"
 BUILD_DIR="${SCRIPT_DIR}/build/android"
 OUTPUT_DIR="${SCRIPT_DIR}/android"
-MBEDTLS_VERSION="3.5.1"
+MBEDTLS_VERSION="v3.5.2"  # Compatible with libwebsockets v4.3.3
 
 # Android Settings
 ANDROID_MIN_SDK=24
@@ -98,22 +98,42 @@ find_ndk() {
 #===============================================================================
 download_mbedtls() {
     if [ ! -d "${MBEDTLS_SOURCE}" ]; then
-        log_info "Downloading mbedTLS ${MBEDTLS_VERSION}..."
-        local TEMP_DIR="/tmp/mbedtls-download"
-        rm -rf "${TEMP_DIR}"
-        mkdir -p "${TEMP_DIR}"
+        log_info "Cloning mbedTLS ${MBEDTLS_VERSION}..."
+        git clone --depth 1 --branch "${MBEDTLS_VERSION}" \
+            "https://github.com/Mbed-TLS/mbedtls.git" "${MBEDTLS_SOURCE}"
 
-        curl -L "https://github.com/Mbed-TLS/mbedtls/archive/refs/tags/v${MBEDTLS_VERSION}.tar.gz" \
-            -o "${TEMP_DIR}/mbedtls.tar.gz"
+        log_info "Initializing submodules..."
+        cd "${MBEDTLS_SOURCE}"
+        git submodule update --init --recursive
+        cd "${SCRIPT_DIR}"
 
-        tar -xzf "${TEMP_DIR}/mbedtls.tar.gz" -C "${SCRIPT_DIR}"
-        mv "${SCRIPT_DIR}/mbedtls-${MBEDTLS_VERSION}" "${MBEDTLS_SOURCE}"
-
-        rm -rf "${TEMP_DIR}"
         log_success "mbedTLS downloaded"
     else
         log_info "mbedTLS source already exists"
     fi
+}
+
+#===============================================================================
+# Configure mbedTLS for Android/ARM (disable x86-specific features)
+#===============================================================================
+configure_mbedtls_for_android() {
+    log_info "Configuring mbedTLS for Android/ARM..."
+
+    local CONFIG_FILE="${MBEDTLS_SOURCE}/include/mbedtls/mbedtls_config.h"
+
+    # Disable AESNI (Intel x86 AES instructions) - not needed for ARM
+    if grep -q "^#define MBEDTLS_AESNI_C" "${CONFIG_FILE}"; then
+        sed -i.bak 's/^#define MBEDTLS_AESNI_C/\/\/ #define MBEDTLS_AESNI_C/' "${CONFIG_FILE}"
+        log_info "Disabled MBEDTLS_AESNI_C (x86-only)"
+    fi
+
+    # Disable PADLOCK (VIA PadLock) - x86 only
+    if grep -q "^#define MBEDTLS_PADLOCK_C" "${CONFIG_FILE}"; then
+        sed -i.bak 's/^#define MBEDTLS_PADLOCK_C/\/\/ #define MBEDTLS_PADLOCK_C/' "${CONFIG_FILE}"
+        log_info "Disabled MBEDTLS_PADLOCK_C (x86-only)"
+    fi
+
+    log_success "mbedTLS configured for ARM"
 }
 
 #===============================================================================
@@ -134,6 +154,7 @@ check_prerequisites() {
 
     find_ndk
     download_mbedtls
+    configure_mbedtls_for_android
 
     log_success "Prerequisites OK"
 }
@@ -165,7 +186,8 @@ build_mbedtls_abi() {
         -DENABLE_PROGRAMS=OFF \
         -DENABLE_TESTING=OFF \
         -DUSE_SHARED_MBEDTLS_LIBRARY=OFF \
-        -DUSE_STATIC_MBEDTLS_LIBRARY=ON
+        -DUSE_STATIC_MBEDTLS_LIBRARY=ON \
+        -DMBEDTLS_AESNI_C=OFF
 
     cmake --build . --config ${BUILD_TYPE} -j$(nproc 2>/dev/null || sysctl -n hw.ncpu)
     cmake --install . --config ${BUILD_TYPE}
@@ -203,6 +225,8 @@ build_abi() {
         -DANDROID_STL=c++_shared \
         -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
         -DCMAKE_INSTALL_PREFIX="${ABI_OUTPUT_DIR}" \
+        -DCMAKE_C_FLAGS="-Wno-sign-conversion" \
+        -DCMAKE_CXX_FLAGS="-Wno-sign-conversion" \
         -DLWS_WITH_SSL=${ENABLE_SSL} \
         -DLWS_WITH_MBEDTLS=ON \
         -DLWS_MBEDTLS_LIBRARIES="${MBEDTLS_OUTPUT_DIR}/lib/libmbedtls.a;${MBEDTLS_OUTPUT_DIR}/lib/libmbedx509.a;${MBEDTLS_OUTPUT_DIR}/lib/libmbedcrypto.a" \
