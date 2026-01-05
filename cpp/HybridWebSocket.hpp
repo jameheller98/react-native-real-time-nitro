@@ -193,6 +193,15 @@ private:
   std::mutex _bufferPoolMutex;
   static constexpr size_t MAX_POOLED_BUFFERS = 10;
   static constexpr size_t BUFFER_SIZE = 4096;
+
+  // ============================================================
+  // Performance metrics (atomic for lock-free reads)
+  // ============================================================
+
+  std::atomic<uint64_t> _messagesSent{0};
+  std::atomic<uint64_t> _messagesReceived{0};
+  std::atomic<uint64_t> _bytesSent{0};
+  std::atomic<uint64_t> _bytesReceived{0};
   
   // ============================================================
   // Private methods

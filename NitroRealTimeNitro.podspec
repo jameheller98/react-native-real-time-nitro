@@ -23,9 +23,11 @@ Pod::Spec.new do |s|
   ]
 
   # Bundle CA certificates for SSL/TLS
+  # Using both resource_bundles and resources for maximum compatibility
   s.resource_bundles = {
     'NitroRealTimeNitro' => ['ios/cacert.pem']
   }
+  s.resources = ['ios/cacert.pem']
 
   s.public_header_files = "ios/**/*.h"
 

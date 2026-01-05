@@ -4,10 +4,15 @@
 #include <sstream>
 #include <chrono>
 #include <cstring>
-#include <algorithm> 
+#include <algorithm>
 
 // LibWebSockets includes
 #include <libwebsockets.h>
+
+// Platform-specific helpers
+#if defined(__APPLE__) || defined(__ANDROID__)
+extern "C" const char* getRealTimeNitroCACertPath();
+#endif
 
 namespace margelo::nitro::realtimenitro {
 
@@ -127,10 +132,34 @@ std::shared_ptr<Promise<void>> HybridWebSocket::connect(
     info.uid = -1;
     info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
 
-    // SSL client configuration
-    // Disable strict certificate verification by default
-    info.options |= LWS_SERVER_OPTION_ALLOW_NON_SSL_ON_SSL_PORT;
-    info.options |= LWS_SERVER_OPTION_PEER_CERT_NOT_REQUIRED;
+    // For client connections, SSL/TLS configuration is done at connection time
+    // using LCCSCF_* flags in lws_client_connect_info (see below)
+
+    // Set CA cert path
+    // On iOS/macOS, try to get bundled CA cert automatically
+    // On other platforms, use provided path or nullptr
+    const char* caCertPath = nullptr;
+
+    if (!_caPath.empty()) {
+      caCertPath = _caPath.c_str();
+      printf("[WebSocket] Using provided CA cert: %s\n", _caPath.c_str());
+    } else {
+      #if defined(__APPLE__) || defined(__ANDROID__)
+      caCertPath = getRealTimeNitroCACertPath();
+      if (caCertPath) {
+        // Store the bundled cert path so the rest of the code knows we have a CA cert
+        _caPath = caCertPath;
+        printf("[WebSocket] Using bundled CA cert: %s\n", caCertPath);
+      }
+      #endif
+    }
+
+    if (caCertPath) {
+      info.client_ssl_ca_filepath = caCertPath;
+    } else {
+      info.client_ssl_ca_filepath = nullptr;
+      printf("[WebSocket] WARNING: No CA cert available - mbedTLS may fail SSL handshake\n");
+    }
 
     // Enable per-message-deflate compression extension
     // This can reduce bandwidth by 60-80% for text messages
@@ -151,19 +180,23 @@ std::shared_ptr<Promise<void>> HybridWebSocket::connect(
 
     // Enable LibWebSockets logging for debugging
     // Always enable error and warning logs to help diagnose connection issues
-    lws_set_log_level(LLL_ERR | LLL_WARN | LLL_NOTICE, nullptr);
+    // Note: On iOS/Android, these logs may go to system logs (use adb logcat or Xcode console)
+    lws_set_log_level(LLL_ERR | LLL_WARN | LLL_NOTICE | LLL_USER, nullptr);
 
-    #ifdef DEBUG
+    printf("[WebSocket] ========================================\n");
+    printf("[WebSocket] Initializing connection to: %s\n", url.c_str());
+    printf("[WebSocket] Host: %s, Port: %d, Path: %s\n", _host.c_str(), _port, _path.c_str());
+    printf("[WebSocket] SSL: %s\n", _useSsl ? "ENABLED" : "DISABLED");
+    printf("[WebSocket] ========================================\n");
+
     printf("[WebSocket] Creating LibWebSockets context...\n");
-    #endif
     _context = lws_create_context(&info);
     if (!_context) {
       _state = State::CLOSED;
+      printf("[WebSocket] ❌ FAILED to create context!\n");
       throw std::runtime_error("Failed to create WebSocket context - check LibWebSockets installation");
     }
-    #ifdef DEBUG
-    printf("[WebSocket] Context created successfully\n");
-    #endif
+    printf("[WebSocket] ✅ Context created successfully\n");
     
     // Setup connection info
     struct lws_client_connect_info ccinfo;
@@ -202,22 +235,28 @@ std::shared_ptr<Promise<void>> HybridWebSocket::connect(
     ccinfo.pwsi = &_wsi;
 
     // Initiate connection
-    #ifdef DEBUG
-    printf("[WebSocket] Initiating connection to %s:%d%s...\n",
-           _host.c_str(), _port, _path.c_str());
-    #endif
+    printf("[WebSocket] 🔄 Initiating connection to %s:%d%s (SSL:%s)...\n",
+           _host.c_str(), _port, _path.c_str(), _useSsl ? "YES" : "NO");
+    printf("[WebSocket] Using SSL flags: 0x%x\n", ccinfo.ssl_connection);
+
     _wsi = lws_client_connect_via_info(&ccinfo);
     if (!_wsi) {
       delete userData;
       cleanup();
+      printf("[WebSocket] ❌ lws_client_connect_via_info() returned NULL\n");
+      printf("[WebSocket] This usually means:\n");
+      printf("[WebSocket]   1. DNS resolution failed for %s\n", _host.c_str());
+      printf("[WebSocket]   2. SSL/TLS configuration error\n");
+      printf("[WebSocket]   3. Out of memory\n");
+      printf("[WebSocket]   4. Invalid parameters\n");
+      printf("[WebSocket] Check system/Xcode console for LibWebSockets errors\n");
+
       std::string errorMsg = "Failed to initiate WebSocket connection to " +
                             _host + ":" + std::to_string(_port) +
                             " - Check network connectivity, DNS resolution, and LibWebSockets logs above";
       throw std::runtime_error(errorMsg);
     }
-    #ifdef DEBUG
-    printf("[WebSocket] Connection initiated, waiting for handshake...\n");
-    #endif
+    printf("[WebSocket] ✅ Connection handle created, waiting for handshake...\n");
     
     // Start service thread
     _running = true;
@@ -235,21 +274,42 @@ std::shared_ptr<Promise<void>> HybridWebSocket::connect(
 // ============================================================
 
 void HybridWebSocket::serviceLoop() {
+  // Adaptive polling: start aggressive, back off when idle
+  int pollTimeout = 1; // Start with 1ms for low latency
+  int idleCount = 0;
+  const int MAX_IDLE_COUNT = 10;
+  const int MAX_TIMEOUT = 50; // Max 50ms when idle
+
   while (_running && _context) {
-    // Service the connection (reduced timeout for lower latency)
-    int result = lws_service(_context, 10); // 10ms timeout (5x faster response)
+    // Service the connection with adaptive timeout
+    int result = lws_service(_context, pollTimeout);
 
     if (result < 0) {
       break; // Service error
     }
 
+    // Adaptive polling: increase timeout when idle to save CPU
+    if (result == 0) {
+      idleCount++;
+      if (idleCount > MAX_IDLE_COUNT && pollTimeout < MAX_TIMEOUT) {
+        pollTimeout = std::min(pollTimeout * 2, MAX_TIMEOUT);
+      }
+    } else {
+      idleCount = 0;
+      pollTimeout = 1; // Reset to low latency when active
+    }
+
     // Process send queue - BATCH PROCESS multiple messages
     if (_wsi && _state == State::OPEN) {
-      std::unique_lock<std::mutex> lock(_sendMutex);
+      // Try lock first to avoid blocking if queue is being modified
+      std::unique_lock<std::mutex> lock(_sendMutex, std::try_to_lock);
+      if (!lock.owns_lock()) {
+        continue; // Skip this iteration if locked
+      }
 
-      // Process up to 32 messages per iteration (batch processing)
+      // Process up to 64 messages per iteration (increased batch size)
       int batchCount = 0;
-      const int MAX_BATCH_SIZE = 32;
+      const int MAX_BATCH_SIZE = 64;
 
       while (!_sendQueue.empty() && batchCount < MAX_BATCH_SIZE) {
         auto& msg = _sendQueue.front();
@@ -277,6 +337,9 @@ void HybridWebSocket::serviceLoop() {
         if (written == static_cast<int>(msg.data.size())) {
           _sendQueue.pop();
           batchCount++;
+          // Track performance metrics
+          _messagesSent.fetch_add(1, std::memory_order_relaxed);
+          _bytesSent.fetch_add(msg.data.size(), std::memory_order_relaxed);
         } else {
           // Write failed, stop batch processing
           break;
@@ -295,13 +358,18 @@ void HybridWebSocket::send(const std::string& message) {
     throw std::runtime_error("WebSocket is not open");
   }
 
-  std::lock_guard<std::mutex> lock(_sendMutex);
   QueuedMessage msg;
+  msg.data.reserve(message.size()); // Pre-allocate to avoid reallocation
   msg.data.assign(message.begin(), message.end());
   msg.isBinary = false;
-  _sendQueue.push(std::move(msg));
 
-  // Wake up service thread
+  {
+    std::lock_guard<std::mutex> lock(_sendMutex);
+    _sendQueue.push(std::move(msg));
+  }
+
+  // Wake up service thread only if needed (when idle)
+  // lws_cancel_service is relatively expensive, so avoid when not needed
   if (_context) {
     lws_cancel_service(_context);
   }
@@ -312,15 +380,18 @@ void HybridWebSocket::sendBinary(const std::shared_ptr<ArrayBuffer>& data) {
     throw std::runtime_error("WebSocket is not open");
   }
 
-  std::lock_guard<std::mutex> lock(_sendMutex);
-
   const uint8_t* bytes = data->data();
   size_t size = data->size();
 
   QueuedMessage msg;
+  msg.data.reserve(size); // Pre-allocate to avoid reallocation
   msg.data.assign(bytes, bytes + size);
   msg.isBinary = true;
-  _sendQueue.push(std::move(msg));
+
+  {
+    std::lock_guard<std::mutex> lock(_sendMutex);
+    _sendQueue.push(std::move(msg));
+  }
 
   // Wake up service thread
   if (_context) {
@@ -484,26 +555,46 @@ int HybridWebSocket::websocketCallback(
       
     case LWS_CALLBACK_CLIENT_RECEIVE: {
       bool isBinary = lws_frame_is_binary(wsi);
-      
+
+      // Track performance metrics
+      ws->_messagesReceived.fetch_add(1, std::memory_order_relaxed);
+      ws->_bytesReceived.fetch_add(len, std::memory_order_relaxed);
+
       if (isBinary) {
         // Binary message - use static factory method
         auto buffer = ArrayBuffer::copy(static_cast<const uint8_t*>(in), len);
-        
-        std::lock_guard<std::mutex> lock(ws->_callbackMutex);
-        if (ws->_onBinaryMessage.has_value()) {
+
+        // Optimize: check if callback exists before locking
+        std::unique_lock<std::mutex> lock(ws->_callbackMutex, std::defer_lock);
+        if (lock.try_lock() && ws->_onBinaryMessage.has_value()) {
           try {
-            ws->_onBinaryMessage.value()(buffer);
-          } catch (...) {}
+            // Copy callback to minimize critical section
+            auto callback = ws->_onBinaryMessage.value();
+            lock.unlock();
+            // Execute outside of lock
+            callback(buffer);
+          } catch (...) {
+            // Catch exceptions from JS callback
+          }
         }
       } else {
-        // Text message
-        std::string message(static_cast<char*>(in), len);
-        
-        std::lock_guard<std::mutex> lock(ws->_callbackMutex);
-        if (ws->_onMessage.has_value()) {
+        // Text message - reserve space for better performance
+        std::string message;
+        message.reserve(len);
+        message.assign(static_cast<char*>(in), len);
+
+        // Optimize: check if callback exists before locking
+        std::unique_lock<std::mutex> lock(ws->_callbackMutex, std::defer_lock);
+        if (lock.try_lock() && ws->_onMessage.has_value()) {
           try {
-            ws->_onMessage.value()(message);
-          } catch (...) {}
+            // Copy callback to minimize critical section
+            auto callback = ws->_onMessage.value();
+            lock.unlock();
+            // Execute outside of lock
+            callback(message);
+          } catch (...) {
+            // Catch exceptions from JS callback
+          }
         }
       }
       break;

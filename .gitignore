@@ -84,3 +84,4 @@ lib/
 
 3rdparty/android
 3rdparty/ios
+.npmignore

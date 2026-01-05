@@ -149,10 +149,14 @@ build_platform() {
 
         log_info "Using mbedTLS from: ${MBEDTLS_IOS_ROOT} (${MBEDTLS_LIB_PREFIX})"
 
-        CMAKE_SSL_OPTIONS="-DLWS_WITH_MBEDTLS=ON -DLWS_MBEDTLS_LIBRARIES=${MBEDTLS_IOS_ROOT}/lib/${MBEDTLS_LIB_PREFIX}-libmbedtls.a;${MBEDTLS_IOS_ROOT}/lib/${MBEDTLS_LIB_PREFIX}-libmbedx509.a;${MBEDTLS_IOS_ROOT}/lib/${MBEDTLS_LIB_PREFIX}-libmbedcrypto.a -DLWS_MBEDTLS_INCLUDE_DIRS=${MBEDTLS_IOS_ROOT}/include -DCMAKE_C_FLAGS=-fembed-bitcode -Wno-undef -Wno-sign-conversion -I${MBEDTLS_IOS_ROOT}/include -DCMAKE_CXX_FLAGS=-fembed-bitcode -Wno-undef -Wno-sign-conversion -I${MBEDTLS_IOS_ROOT}/include"
+        CMAKE_SSL_OPTIONS="-DLWS_WITH_MBEDTLS=ON -DLWS_MBEDTLS_LIBRARIES=${MBEDTLS_IOS_ROOT}/lib/${MBEDTLS_LIB_PREFIX}-libmbedtls.a;${MBEDTLS_IOS_ROOT}/lib/${MBEDTLS_LIB_PREFIX}-libmbedx509.a;${MBEDTLS_IOS_ROOT}/lib/${MBEDTLS_LIB_PREFIX}-libmbedcrypto.a -DLWS_MBEDTLS_INCLUDE_DIRS=${MBEDTLS_IOS_ROOT}/include"
+        CMAKE_C_FLAGS="-fembed-bitcode -Wno-undef -Wno-sign-conversion -I${MBEDTLS_IOS_ROOT}/include"
+        CMAKE_CXX_FLAGS="-fembed-bitcode -Wno-undef -Wno-sign-conversion -I${MBEDTLS_IOS_ROOT}/include"
     else
         log_info "SSL disabled - building without mbedTLS"
-        CMAKE_SSL_OPTIONS="-DLWS_WITH_MBEDTLS=OFF -DCMAKE_C_FLAGS=-fembed-bitcode -Wno-undef -Wno-sign-conversion -DCMAKE_CXX_FLAGS=-fembed-bitcode -Wno-undef -Wno-sign-conversion"
+        CMAKE_SSL_OPTIONS="-DLWS_WITH_MBEDTLS=OFF"
+        CMAKE_C_FLAGS="-fembed-bitcode -Wno-undef -Wno-sign-conversion"
+        CMAKE_CXX_FLAGS="-fembed-bitcode -Wno-undef -Wno-sign-conversion"
     fi
 
     # Configure with CMake
@@ -163,6 +167,8 @@ build_platform() {
         -DCMAKE_OSX_ARCHITECTURES="${ARCH}" \
         -DCMAKE_OSX_DEPLOYMENT_TARGET="${IOS_DEPLOYMENT_TARGET}" \
         -DCMAKE_INSTALL_PREFIX="${PLATFORM_OUTPUT_DIR}" \
+        -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" \
+        -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" \
         ${CMAKE_SSL_OPTIONS} \
         -DLWS_WITH_SSL=${ENABLE_SSL} \
         -DLWS_WITH_SHARED=OFF \

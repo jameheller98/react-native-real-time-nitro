@@ -21,6 +21,7 @@ set_target_properties(libwebsockets PROPERTIES
 #===============================================================================
 add_library(${PACKAGE_NAME} SHARED
     src/main/cpp/cpp-adapter.cpp
+    src/main/cpp/AndroidBundleHelper.cpp
     # Add more source files here as needed
 )
 
