@@ -1,0 +1,18 @@
+{
+  "$schema": "https://nitro.margelo.com/nitro.schema.json",
+  "cxxNamespace": ["realtimenitro"],
+  "ios": {
+    "iosModuleName": "NitroRealTimeNitro"
+  },
+  "android": {
+    "androidNamespace": ["com", "realtimenitro"],
+    "androidCxxLibName": "NitroRealTimeNitro"
+  },
+  "autolinking": {
+    "WebSocket": {
+      "cpp": "HybridWebSocket"
+    }
+  },
+  "ignorePaths": ["**/node_modules", "**/lib", "**/example"],
+  "gitAttributesGeneratedFlag": true
+}
