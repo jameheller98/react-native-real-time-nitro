@@ -36,18 +36,19 @@
   },
   "keywords": [
     "react-native",
-    "nitro"
+    "nitro",
+    "websocket"
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mrousavy/nitro.git"
+    "url": "git+https://github.com/jameheller98/react-native-real-time-nitro"
   },
-  "author": "Marc Rousavy <me@mrousavy.com> (https://github.com/mrousavy)",
+  "author": "Hoang Tuan <nguyentuanwd.ou@gmail.com> (https://github.com/jameheller98)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/mrousavy/nitro/issues"
+    "url": "https://github.com/jameheller98/react-native-real-time-nitro/issues"
   },
-  "homepage": "https://github.com/mrousavy/nitro#readme",
+  "homepage": "https://github.com/jameheller98/react-native-real-time-nitro#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },
