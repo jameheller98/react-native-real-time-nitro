@@ -34,20 +34,19 @@ OPENSSL_URL="https://github.com/openssl/openssl/releases/download/${OPENSSL_VERS
 # Download libwebsockets
 #===============================================================================
 download_libwebsockets() {
+    local FORCE=$1
     log_info "Downloading libwebsockets ${LIBWEBSOCKETS_VERSION}..."
-    
+
     if [ -d "libwebsockets" ]; then
-        log_warning "libwebsockets directory already exists"
-        read -p "Delete and re-download? [y/N] " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
+        if [ "$FORCE" = "true" ]; then
+            log_info "Force mode: Removing existing libwebsockets directory"
             rm -rf libwebsockets
         else
-            log_info "Skipping libwebsockets download"
+            log_info "libwebsockets already exists (use --force to re-download)"
             return 0
         fi
     fi
-    
+
     git clone --depth 1 --branch "${LIBWEBSOCKETS_VERSION}" "${LIBWEBSOCKETS_REPO}" libwebsockets
     log_success "Downloaded libwebsockets ${LIBWEBSOCKETS_VERSION}"
 }
@@ -56,20 +55,19 @@ download_libwebsockets() {
 # Download OpenSSL (optional - for TLS support)
 #===============================================================================
 download_openssl() {
+    local FORCE=$1
     log_info "Downloading OpenSSL ${OPENSSL_VERSION}..."
-    
+
     if [ -d "openssl" ]; then
-        log_warning "openssl directory already exists"
-        read -p "Delete and re-download? [y/N] " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
+        if [ "$FORCE" = "true" ]; then
+            log_info "Force mode: Removing existing openssl directory"
             rm -rf openssl
         else
-            log_info "Skipping openssl download"
+            log_info "openssl already exists (use --force to re-download)"
             return 0
         fi
     fi
-    
+
     curl -L "${OPENSSL_URL}" -o openssl.tar.gz
     tar -xzf openssl.tar.gz
     mv "${OPENSSL_VERSION}" openssl
@@ -81,23 +79,51 @@ download_openssl() {
 # Main
 #===============================================================================
 main() {
+    local FORCE=false
+
+    # Parse arguments
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --force)
+                FORCE=true
+                ;;
+            --help)
+                echo "Usage: $0 [options]"
+                echo ""
+                echo "Options:"
+                echo "  --force    Force re-download even if sources exist"
+                echo "  --help     Show this help"
+                echo ""
+                echo "Downloads libwebsockets ${LIBWEBSOCKETS_VERSION}"
+                exit 0
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                echo "Run '$0 --help' for usage"
+                exit 1
+                ;;
+        esac
+        shift
+    done
+
     log_info "=== Downloading 3rd Party Libraries ==="
     log_info "Working directory: ${SCRIPT_DIR}"
-    
+
     # Create output directories
     mkdir -p ios android
-    
+
     # Download libraries
-    download_libwebsockets
-    
+    download_libwebsockets "$FORCE"
+
     # Uncomment if you need TLS support
-    # download_openssl
-    
+    # download_openssl "$FORCE"
+
     log_success "=== All downloads completed ==="
     log_info ""
     log_info "Next steps:"
-    log_info "  1. Build for iOS:     ./build_ios.sh"
-    log_info "  2. Build for Android: ./build_android.sh"
+    log_info "  1. Build for all:     ./build_all.sh"
+    log_info "  2. Build for iOS:     ./build_libwebsockets_ios.sh"
+    log_info "  3. Build for Android: ./build_libwebsockets_android.sh"
 }
 
 main "$@"

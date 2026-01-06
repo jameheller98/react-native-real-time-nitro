@@ -1,6 +1,6 @@
 #!/bin/bash
 #===============================================================================
-# build_android.sh - Build libwebsockets for Android (all ABIs)
+# build_libwebsockets_android.sh - Build libwebsockets for Android (all ABIs)
 # Creates prebuilt libraries for React Native Nitro Module
 #===============================================================================
 set -e
@@ -34,8 +34,11 @@ ANDROID_MIN_SDK=24
 ANDROID_TARGET_SDK=34
 BUILD_TYPE="Release"
 
-# ABIs to build
+# ABIs to build (can be overridden by command line)
 ABIS=("armeabi-v7a" "arm64-v8a" "x86" "x86_64")
+
+# Modern ABIs only (saves ~74MB of build artifacts)
+MODERN_ABIS=("arm64-v8a" "x86_64")
 
 # Build Options
 ENABLE_SSL=ON           # Enable SSL/TLS for wss:// support
@@ -157,6 +160,26 @@ check_prerequisites() {
     configure_mbedtls_for_android
 
     log_success "Prerequisites OK"
+}
+
+#===============================================================================
+# Patch libwebsockets CMakeLists.txt for modern CMake
+#===============================================================================
+patch_libwebsockets_cmake() {
+    local CMAKE_FILE="${LWS_SOURCE}/CMakeLists.txt"
+
+    # Check if already patched
+    if grep -q "cmake_minimum_required(VERSION 3.5" "${CMAKE_FILE}"; then
+        return 0
+    fi
+
+    log_info "Patching libwebsockets CMakeLists.txt for CMake 3.5+"
+
+    # Update cmake_minimum_required from 2.8.12 to 3.5
+    if grep -q "cmake_minimum_required(VERSION 2.8.12)" "${CMAKE_FILE}"; then
+        sed -i.bak 's/cmake_minimum_required(VERSION 2.8.12)/cmake_minimum_required(VERSION 3.5)/' "${CMAKE_FILE}"
+        log_success "Patched CMake version requirement"
+    fi
 }
 
 #===============================================================================
@@ -321,26 +344,60 @@ clean() {
 # Main
 #===============================================================================
 main() {
+    local USE_MODERN_ONLY=false
+
+    # Parse arguments
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --clean)
+                clean
+                exit 0
+                ;;
+            --modern-only)
+                USE_MODERN_ONLY=true
+                ABIS=("${MODERN_ABIS[@]}")
+                ;;
+            --help)
+                echo "Usage: $0 [options] [ABI]"
+                echo ""
+                echo "Options:"
+                echo "  --clean         Clean build directory"
+                echo "  --modern-only   Build only modern ABIs (arm64-v8a, x86_64)"
+                echo "                  Saves ~37MB per legacy ABI"
+                echo "  --help          Show this help"
+                echo ""
+                echo "Specify single ABI: armeabi-v7a, arm64-v8a, x86, x86_64"
+                echo ""
+                echo "Examples:"
+                echo "  $0                    # Build all ABIs"
+                echo "  $0 --modern-only      # Build only arm64-v8a and x86_64"
+                echo "  $0 arm64-v8a          # Build only arm64-v8a"
+                exit 0
+                ;;
+            armeabi-v7a|arm64-v8a|x86|x86_64)
+                ABIS=("$1")
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                echo "Run '$0 --help' for usage"
+                exit 1
+                ;;
+        esac
+        shift
+    done
+
     log_info "=== Building libwebsockets for Android ==="
     log_info "Source: ${LWS_SOURCE}"
     log_info "Output: ${OUTPUT_DIR}"
     log_info "ABIs: ${ABIS[*]}"
+    if [ "$USE_MODERN_ONLY" = true ]; then
+        log_info "(Modern ABIs only - legacy 32-bit ABIs excluded)"
+    fi
     log_info ""
-    
-    # Parse arguments
-    if [ "$1" == "--clean" ]; then
-        clean
-        exit 0
-    fi
-    
-    # Allow building single ABI
-    if [ -n "$1" ] && [ "$1" != "--clean" ]; then
-        ABIS=("$1")
-        log_info "Building single ABI: $1"
-    fi
-    
+
     check_prerequisites
-    
+    patch_libwebsockets_cmake
+
     # Build for each ABI
     for ABI in "${ABIS[@]}"; do
         build_abi "${ABI}"
@@ -362,6 +419,9 @@ main() {
     log_info "Add to your CMakeLists.txt:"
     log_info "  include(\${CMAKE_SOURCE_DIR}/../3rdparty/android/CMakeLists.txt)"
     log_info "  target_link_libraries(your_module libwebsockets)"
+    log_info ""
+    log_info "Tip: Use '$0 --modern-only' to skip legacy ABIs and save build time"
+    log_info "Tip: Run '../build_all.sh --clean-build' to remove build/ intermediates"
 }
 
 main "$@"
