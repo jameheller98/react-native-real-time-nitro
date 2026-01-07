@@ -41,10 +41,6 @@ Pod::Spec.new do |s|
 
   # Build settings
   s.pod_target_xcconfig = {
-    # C++ standard
-    # "CLANG_CXX_LANGUAGE_STANDARD" => "c++11",
-    # "CLANG_CXX_LIBRARY" => "libc++",
-
     # Header search paths for libwebsockets and mbedTLS
     "HEADER_SEARCH_PATHS" => "$(inherited) " \
       "$(PODS_TARGET_SRCROOT)/3rdparty/ios/libwebsockets.xcframework/ios-arm64/Headers " \
@@ -55,18 +51,20 @@ Pod::Spec.new do |s|
       "$(PODS_TARGET_SRCROOT)/3rdparty/ios/mbedx509.xcframework/ios-arm64_x86_64-simulator/Headers " \
       "$(PODS_TARGET_SRCROOT)/3rdparty/ios/mbedcrypto.xcframework/ios-arm64/Headers " \
       "$(PODS_TARGET_SRCROOT)/3rdparty/ios/mbedcrypto.xcframework/ios-arm64_x86_64-simulator/Headers"
-
-    # # Other C++ flags
-    # "OTHER_CPLUSPLUSFLAGS" => "-fmodules -fcxx-modules",
-
-    # # GCC Preprocessor (fixes some header issues)
-    # "GCC_PREPROCESSOR_DEFINITIONS" => "$(inherited)"
   }
-  
-  # s.user_target_xcconfig = {
-  #   "CLANG_CXX_LANGUAGE_STANDARD" => "c++20",
-  #   "CLANG_CXX_LIBRARY" => "libc++"
-  # }
+
+  s.user_target_xcconfig = {
+    # Header search paths for consuming app - needed for libwebsockets headers to find mbedtls
+    "HEADER_SEARCH_PATHS" => "$(inherited) " \
+      "$(PODS_ROOT)/NitroRealTimeNitro/3rdparty/ios/libwebsockets.xcframework/ios-arm64/Headers " \
+      "$(PODS_ROOT)/NitroRealTimeNitro/3rdparty/ios/libwebsockets.xcframework/ios-arm64_x86_64-simulator/Headers " \
+      "$(PODS_ROOT)/NitroRealTimeNitro/3rdparty/ios/mbedtls.xcframework/ios-arm64/Headers " \
+      "$(PODS_ROOT)/NitroRealTimeNitro/3rdparty/ios/mbedtls.xcframework/ios-arm64_x86_64-simulator/Headers " \
+      "$(PODS_ROOT)/NitroRealTimeNitro/3rdparty/ios/mbedx509.xcframework/ios-arm64/Headers " \
+      "$(PODS_ROOT)/NitroRealTimeNitro/3rdparty/ios/mbedx509.xcframework/ios-arm64_x86_64-simulator/Headers " \
+      "$(PODS_ROOT)/NitroRealTimeNitro/3rdparty/ios/mbedcrypto.xcframework/ios-arm64/Headers " \
+      "$(PODS_ROOT)/NitroRealTimeNitro/3rdparty/ios/mbedcrypto.xcframework/ios-arm64_x86_64-simulator/Headers"
+  }
 
   # Nitrogen autolinking
   load 'nitrogen/generated/ios/NitroRealTimeNitro+autolinking.rb'
