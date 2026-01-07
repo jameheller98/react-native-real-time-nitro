@@ -45,8 +45,16 @@ Pod::Spec.new do |s|
     # "CLANG_CXX_LANGUAGE_STANDARD" => "c++11",
     # "CLANG_CXX_LIBRARY" => "libc++",
 
-    # Header search paths for libwebsockets (mbedTLS headers included in XCFramework)
-    "HEADER_SEARCH_PATHS" => "$(PODS_TARGET_SRCROOT)/3rdparty/ios/libwebsockets.xcframework/ios-arm64/Headers"
+    # Header search paths for libwebsockets and mbedTLS
+    "HEADER_SEARCH_PATHS" => "$(inherited) " \
+      "$(PODS_TARGET_SRCROOT)/3rdparty/ios/libwebsockets.xcframework/ios-arm64/Headers " \
+      "$(PODS_TARGET_SRCROOT)/3rdparty/ios/libwebsockets.xcframework/ios-arm64_x86_64-simulator/Headers " \
+      "$(PODS_TARGET_SRCROOT)/3rdparty/ios/mbedtls.xcframework/ios-arm64/Headers " \
+      "$(PODS_TARGET_SRCROOT)/3rdparty/ios/mbedtls.xcframework/ios-arm64_x86_64-simulator/Headers " \
+      "$(PODS_TARGET_SRCROOT)/3rdparty/ios/mbedx509.xcframework/ios-arm64/Headers " \
+      "$(PODS_TARGET_SRCROOT)/3rdparty/ios/mbedx509.xcframework/ios-arm64_x86_64-simulator/Headers " \
+      "$(PODS_TARGET_SRCROOT)/3rdparty/ios/mbedcrypto.xcframework/ios-arm64/Headers " \
+      "$(PODS_TARGET_SRCROOT)/3rdparty/ios/mbedcrypto.xcframework/ios-arm64_x86_64-simulator/Headers"
 
     # # Other C++ flags
     # "OTHER_CPLUSPLUSFLAGS" => "-fmodules -fcxx-modules",

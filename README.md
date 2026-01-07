@@ -82,14 +82,18 @@
 
 ## 📦 Installation
 
+### Prerequisites
+
+This library requires `react-native-nitro-modules` as a peer dependency:
+
 ```bash
-npm install react-native-real-time-nitro
+npm install react-native-nitro-modules react-native-real-time-nitro
 ```
 
 or
 
 ```bash
-yarn add react-native-real-time-nitro
+yarn add react-native-nitro-modules react-native-real-time-nitro
 ```
 
 ### Platform Setup
