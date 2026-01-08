@@ -82,6 +82,4 @@ lib/
 .cache
 *.tsbuildinfo
 
-3rdparty/android
-3rdparty/ios
 .npmignore
