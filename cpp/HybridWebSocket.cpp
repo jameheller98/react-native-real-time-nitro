@@ -118,6 +118,7 @@ std::shared_ptr<Promise<void>> HybridWebSocket::connect(
         .per_session_data_size = sizeof(WebSocketUserData),
         .rx_buffer_size = 65536,
         .tx_packet_size = 0, // 0 = use default
+        .id = 0,
       },
       LWS_PROTOCOL_LIST_TERM
     };

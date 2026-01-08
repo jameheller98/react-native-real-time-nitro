@@ -282,47 +282,13 @@ build_abi() {
     mkdir -p "${ABI_OUTPUT_DIR}/include"
     cp -R "${MBEDTLS_OUTPUT_DIR}/include/"* "${ABI_OUTPUT_DIR}/include/"
 
-    # Merge mbedtls libraries into libwebsockets.a
-    log_info "Merging mbedtls libraries into libwebsockets.a for ${ABI}..."
-    local MERGED_DIR="${BUILD_DIR}/${ABI}/merged"
-    local LWS_LIB="${ABI_OUTPUT_DIR}/lib/libwebsockets.a"
-    local MBEDTLS_LIBS=(
-        "${MBEDTLS_OUTPUT_DIR}/lib/libmbedtls.a"
-        "${MBEDTLS_OUTPUT_DIR}/lib/libmbedx509.a"
-        "${MBEDTLS_OUTPUT_DIR}/lib/libmbedcrypto.a"
-    )
+    # Copy mbedtls libraries to output (they will be linked separately in CMakeLists.txt)
+    log_info "Copying mbedtls libraries for ${ABI}..."
+    cp "${MBEDTLS_OUTPUT_DIR}/lib/libmbedtls.a" "${ABI_OUTPUT_DIR}/lib/"
+    cp "${MBEDTLS_OUTPUT_DIR}/lib/libmbedx509.a" "${ABI_OUTPUT_DIR}/lib/"
+    cp "${MBEDTLS_OUTPUT_DIR}/lib/libmbedcrypto.a" "${ABI_OUTPUT_DIR}/lib/"
 
-    # Create temporary directory for extraction
-    rm -rf "${MERGED_DIR}"
-    mkdir -p "${MERGED_DIR}"
-    cd "${MERGED_DIR}"
-
-    # Extract all object files from all libraries
-    log_info "Extracting object files..."
-    ar x "${LWS_LIB}"
-    for MBEDTLS_LIB in "${MBEDTLS_LIBS[@]}"; do
-        ar x "${MBEDTLS_LIB}"
-    done
-
-    # Create new merged archive using find to get all .o files recursively
-    log_info "Creating merged libwebsockets.a..."
-    rm -f "${LWS_LIB}"
-    find . -name "*.o" -exec ar crs "${LWS_LIB}" {} +
-
-    # Verify merge was successful
-    local LIB_SIZE=$(stat -f%z "${LWS_LIB}" 2>/dev/null || stat -c%s "${LWS_LIB}" 2>/dev/null)
-    if [ "${LIB_SIZE}" -lt 1000000 ]; then
-        log_error "Merged library is too small (${LIB_SIZE} bytes), merge may have failed!"
-        cd "${SCRIPT_DIR}"
-        exit 1
-    fi
-    log_info "Merged library size: ${LIB_SIZE} bytes"
-
-    # Clean up
-    cd "${SCRIPT_DIR}"
-    rm -rf "${MERGED_DIR}"
-
-    log_success "Built and merged ${ABI}"
+    log_success "Built ${ABI}"
     cd "${SCRIPT_DIR}"
 }
 
