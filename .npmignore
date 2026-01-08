@@ -1,0 +1,17 @@
+# Start with .gitignore
+# BUT force-include the pre-built binaries
+
+# Development
+example/
+.vscode/
+.idea/
+
+# Tests
+**/__tests__/
+**/__mocks__/
+
+# Development and build artifacts
+# Note: Source directories (3rdparty/libwebsockets/, 3rdparty/mbedtls/) are already excluded by .gitignore
+example/
+3rdparty/build/
+3rdparty/*.sh

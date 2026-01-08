@@ -81,5 +81,3 @@ lib/
 .eslintcache
 .cache
 *.tsbuildinfo
-
-.npmignore
