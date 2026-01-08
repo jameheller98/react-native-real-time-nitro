@@ -5593,7 +5593,7 @@ react-native-nitro-modules@^0.32.0:
   integrity sha512-nLDsmi/H9/cLcYxArYxcTDL641JiWnAH3u2LmsFETgyqSEHvukswDTdmX6AHBRIAwXu/iUDppZyjsaRpTG6WMg==
 
 react-native-real-time-nitro@../:
-  version "1.0.0"
+  version "1.1.0"
 
 react-native-reanimated@~4.1.1:
   version "4.1.6"

@@ -41,29 +41,27 @@ Pod::Spec.new do |s|
 
   # Build settings
   s.pod_target_xcconfig = {
-    # Header search paths for libwebsockets and mbedTLS
-    "HEADER_SEARCH_PATHS" => "$(inherited) " \
-      "$(PODS_TARGET_SRCROOT)/3rdparty/ios/libwebsockets.xcframework/ios-arm64/Headers " \
-      "$(PODS_TARGET_SRCROOT)/3rdparty/ios/libwebsockets.xcframework/ios-arm64_x86_64-simulator/Headers " \
-      "$(PODS_TARGET_SRCROOT)/3rdparty/ios/mbedtls.xcframework/ios-arm64/Headers " \
-      "$(PODS_TARGET_SRCROOT)/3rdparty/ios/mbedtls.xcframework/ios-arm64_x86_64-simulator/Headers " \
-      "$(PODS_TARGET_SRCROOT)/3rdparty/ios/mbedx509.xcframework/ios-arm64/Headers " \
-      "$(PODS_TARGET_SRCROOT)/3rdparty/ios/mbedx509.xcframework/ios-arm64_x86_64-simulator/Headers " \
-      "$(PODS_TARGET_SRCROOT)/3rdparty/ios/mbedcrypto.xcframework/ios-arm64/Headers " \
-      "$(PODS_TARGET_SRCROOT)/3rdparty/ios/mbedcrypto.xcframework/ios-arm64_x86_64-simulator/Headers"
+    'HEADER_SEARCH_PATHS' => '$(inherited) ' +
+      '$(PODS_TARGET_SRCROOT)/3rdparty/ios/libwebsockets.xcframework/ios-arm64/Headers ' +
+      '$(PODS_TARGET_SRCROOT)/3rdparty/ios/libwebsockets.xcframework/ios-arm64_x86_64-simulator/Headers ' +
+      '$(PODS_TARGET_SRCROOT)/3rdparty/ios/mbedtls.xcframework/ios-arm64/Headers ' +
+      '$(PODS_TARGET_SRCROOT)/3rdparty/ios/mbedtls.xcframework/ios-arm64_x86_64-simulator/Headers ' +
+      '$(PODS_TARGET_SRCROOT)/3rdparty/ios/mbedx509.xcframework/ios-arm64/Headers ' +
+      '$(PODS_TARGET_SRCROOT)/3rdparty/ios/mbedx509.xcframework/ios-arm64_x86_64-simulator/Headers ' +
+      '$(PODS_TARGET_SRCROOT)/3rdparty/ios/mbedcrypto.xcframework/ios-arm64/Headers ' +
+      '$(PODS_TARGET_SRCROOT)/3rdparty/ios/mbedcrypto.xcframework/ios-arm64_x86_64-simulator/Headers'
   }
 
   s.user_target_xcconfig = {
-    # Header search paths for consuming app - needed for libwebsockets headers to find mbedtls
-    "HEADER_SEARCH_PATHS" => "$(inherited) " \
-      "$(PODS_ROOT)/NitroRealTimeNitro/3rdparty/ios/libwebsockets.xcframework/ios-arm64/Headers " \
-      "$(PODS_ROOT)/NitroRealTimeNitro/3rdparty/ios/libwebsockets.xcframework/ios-arm64_x86_64-simulator/Headers " \
-      "$(PODS_ROOT)/NitroRealTimeNitro/3rdparty/ios/mbedtls.xcframework/ios-arm64/Headers " \
-      "$(PODS_ROOT)/NitroRealTimeNitro/3rdparty/ios/mbedtls.xcframework/ios-arm64_x86_64-simulator/Headers " \
-      "$(PODS_ROOT)/NitroRealTimeNitro/3rdparty/ios/mbedx509.xcframework/ios-arm64/Headers " \
-      "$(PODS_ROOT)/NitroRealTimeNitro/3rdparty/ios/mbedx509.xcframework/ios-arm64_x86_64-simulator/Headers " \
-      "$(PODS_ROOT)/NitroRealTimeNitro/3rdparty/ios/mbedcrypto.xcframework/ios-arm64/Headers " \
-      "$(PODS_ROOT)/NitroRealTimeNitro/3rdparty/ios/mbedcrypto.xcframework/ios-arm64_x86_64-simulator/Headers"
+    'HEADER_SEARCH_PATHS' => '$(inherited) ' +
+      '$(PODS_ROOT)/NitroRealTimeNitro/3rdparty/ios/libwebsockets.xcframework/ios-arm64/Headers ' +
+      '$(PODS_ROOT)/NitroRealTimeNitro/3rdparty/ios/libwebsockets.xcframework/ios-arm64_x86_64-simulator/Headers ' +
+      '$(PODS_ROOT)/NitroRealTimeNitro/3rdparty/ios/mbedtls.xcframework/ios-arm64/Headers ' +
+      '$(PODS_ROOT)/NitroRealTimeNitro/3rdparty/ios/mbedtls.xcframework/ios-arm64_x86_64-simulator/Headers ' +
+      '$(PODS_ROOT)/NitroRealTimeNitro/3rdparty/ios/mbedx509.xcframework/ios-arm64/Headers ' +
+      '$(PODS_ROOT)/NitroRealTimeNitro/3rdparty/ios/mbedx509.xcframework/ios-arm64_x86_64-simulator/Headers ' +
+      '$(PODS_ROOT)/NitroRealTimeNitro/3rdparty/ios/mbedcrypto.xcframework/ios-arm64/Headers ' +
+      '$(PODS_ROOT)/NitroRealTimeNitro/3rdparty/ios/mbedcrypto.xcframework/ios-arm64_x86_64-simulator/Headers'
   }
 
   # Nitrogen autolinking
