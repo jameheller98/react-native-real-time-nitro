@@ -393,40 +393,94 @@ build_lws_platform() {
 }
 
 #===============================================================================
-# Create libwebsockets XCFramework
+# Create libwebsockets XCFramework (with mbedtls merged)
 #===============================================================================
 create_lws_xcframework() {
-    log_info "Creating libwebsockets XCFramework..."
+    log_info "Creating libwebsockets XCFramework (with mbedtls merged)..."
 
     local XCFRAMEWORK_PATH="${OUTPUT_DIR}/libwebsockets.xcframework"
 
     rm -rf "${XCFRAMEWORK_PATH}"
     mkdir -p "${OUTPUT_DIR}"
 
-    # Create fat library for simulator (arm64 + x86_64)
-    local SIM_FAT_DIR="${LWS_BUILD_DIR}/simulator-fat"
-    mkdir -p "${SIM_FAT_DIR}"
+    # Merge directories for combined libraries
+    local DEVICE_MERGED_DIR="${LWS_BUILD_DIR}/device-merged"
+    local SIM_MERGED_DIR="${LWS_BUILD_DIR}/simulator-merged"
+    mkdir -p "${DEVICE_MERGED_DIR}/lib"
+    mkdir -p "${SIM_MERGED_DIR}/lib"
 
+    # Merge libwebsockets + mbedtls libraries for device (arm64)
+    log_info "Merging device libraries (arm64)..."
+    libtool -static -o "${DEVICE_MERGED_DIR}/lib/libwebsockets.a" \
+        "${LWS_BUILD_DIR}/OS64/output/lib/libwebsockets.a" \
+        "${MBEDTLS_OUTPUT_DIR}/lib/device-libmbedtls.a" \
+        "${MBEDTLS_OUTPUT_DIR}/lib/device-libmbedx509.a" \
+        "${MBEDTLS_OUTPUT_DIR}/lib/device-libmbedcrypto.a"
+
+    # Create fat libraries for simulator (arm64 + x86_64)
+    log_info "Creating fat simulator libraries..."
+    local SIM_ARM64_LWS="${LWS_BUILD_DIR}/SIMULATORARM64/output/lib/libwebsockets.a"
+    local SIM_X64_LWS="${LWS_BUILD_DIR}/SIMULATOR64/output/lib/libwebsockets.a"
+    local SIM_FAT_MBEDTLS="${MBEDTLS_OUTPUT_DIR}/lib/simulator-libmbedtls.a"
+    local SIM_FAT_MBEDX509="${MBEDTLS_OUTPUT_DIR}/lib/simulator-libmbedx509.a"
+    local SIM_FAT_MBEDCRYPTO="${MBEDTLS_OUTPUT_DIR}/lib/simulator-libmbedcrypto.a"
+
+    # Extract specific architectures from fat mbedtls libraries
+    local MBEDTLS_THIN_DIR="${LWS_BUILD_DIR}/mbedtls-thin"
+    mkdir -p "${MBEDTLS_THIN_DIR}"
+
+    # Extract arm64 versions
+    lipo "${SIM_FAT_MBEDTLS}" -thin arm64 -output "${MBEDTLS_THIN_DIR}/arm64-libmbedtls.a"
+    lipo "${SIM_FAT_MBEDX509}" -thin arm64 -output "${MBEDTLS_THIN_DIR}/arm64-libmbedx509.a"
+    lipo "${SIM_FAT_MBEDCRYPTO}" -thin arm64 -output "${MBEDTLS_THIN_DIR}/arm64-libmbedcrypto.a"
+
+    # Extract x86_64 versions
+    lipo "${SIM_FAT_MBEDTLS}" -thin x86_64 -output "${MBEDTLS_THIN_DIR}/x86_64-libmbedtls.a"
+    lipo "${SIM_FAT_MBEDX509}" -thin x86_64 -output "${MBEDTLS_THIN_DIR}/x86_64-libmbedx509.a"
+    lipo "${SIM_FAT_MBEDCRYPTO}" -thin x86_64 -output "${MBEDTLS_THIN_DIR}/x86_64-libmbedcrypto.a"
+
+    # Merge libwebsockets + mbedtls for each simulator architecture
+    local SIM_ARM64_MERGED="${LWS_BUILD_DIR}/sim-arm64-merged.a"
+    local SIM_X64_MERGED="${LWS_BUILD_DIR}/sim-x64-merged.a"
+
+    libtool -static -o "${SIM_ARM64_MERGED}" \
+        "${SIM_ARM64_LWS}" \
+        "${MBEDTLS_THIN_DIR}/arm64-libmbedtls.a" \
+        "${MBEDTLS_THIN_DIR}/arm64-libmbedx509.a" \
+        "${MBEDTLS_THIN_DIR}/arm64-libmbedcrypto.a"
+
+    libtool -static -o "${SIM_X64_MERGED}" \
+        "${SIM_X64_LWS}" \
+        "${MBEDTLS_THIN_DIR}/x86_64-libmbedtls.a" \
+        "${MBEDTLS_THIN_DIR}/x86_64-libmbedx509.a" \
+        "${MBEDTLS_THIN_DIR}/x86_64-libmbedcrypto.a"
+
+    # Create fat library combining both simulator architectures
     lipo -create \
-        "${LWS_BUILD_DIR}/SIMULATORARM64/output/lib/libwebsockets.a" \
-        "${LWS_BUILD_DIR}/SIMULATOR64/output/lib/libwebsockets.a" \
-        -output "${SIM_FAT_DIR}/libwebsockets.a"
+        "${SIM_ARM64_MERGED}" \
+        "${SIM_X64_MERGED}" \
+        -output "${SIM_MERGED_DIR}/lib/libwebsockets.a"
 
-    # Copy headers
-    cp -R "${LWS_BUILD_DIR}/OS64/output/include" "${SIM_FAT_DIR}/"
+    # Copy headers (include both libwebsockets and mbedtls headers)
+    cp -R "${LWS_BUILD_DIR}/OS64/output/include" "${DEVICE_MERGED_DIR}/"
+    cp -R "${MBEDTLS_OUTPUT_DIR}/include/"* "${DEVICE_MERGED_DIR}/include/"
+
+    cp -R "${LWS_BUILD_DIR}/OS64/output/include" "${SIM_MERGED_DIR}/"
+    cp -R "${MBEDTLS_OUTPUT_DIR}/include/"* "${SIM_MERGED_DIR}/include/"
 
     # Create XCFramework
     xcodebuild -create-xcframework \
-        -library "${LWS_BUILD_DIR}/OS64/output/lib/libwebsockets.a" \
-        -headers "${LWS_BUILD_DIR}/OS64/output/include" \
-        -library "${SIM_FAT_DIR}/libwebsockets.a" \
-        -headers "${SIM_FAT_DIR}/include" \
+        -library "${DEVICE_MERGED_DIR}/lib/libwebsockets.a" \
+        -headers "${DEVICE_MERGED_DIR}/include" \
+        -library "${SIM_MERGED_DIR}/lib/libwebsockets.a" \
+        -headers "${SIM_MERGED_DIR}/include" \
         -output "${XCFRAMEWORK_PATH}"
 
-    # Clean up temporary simulator-fat directory
-    rm -rf "${SIM_FAT_DIR}"
+    # Clean up temporary directories
+    rm -rf "${DEVICE_MERGED_DIR}" "${SIM_MERGED_DIR}" "${MBEDTLS_THIN_DIR}"
+    rm -f "${SIM_ARM64_MERGED}" "${SIM_X64_MERGED}"
 
-    log_success "Created libwebsockets XCFramework"
+    log_success "Created merged libwebsockets XCFramework (includes mbedtls)"
 }
 
 #===============================================================================
@@ -517,7 +571,8 @@ main() {
     build_mbedtls_platform "SIMULATORARM64" "arm64" "iphonesimulator"
     build_mbedtls_platform "SIMULATOR64" "x86_64" "iphonesimulator"
     create_mbedtls_fat_libs
-    create_mbedtls_xcframeworks "$CLEANUP"
+    # Note: mbedtls libraries are merged into libwebsockets.xcframework
+    # create_mbedtls_xcframeworks "$CLEANUP"
 
     log_info ""
     log_info "Step 2/3: Building libwebsockets..."
@@ -535,14 +590,12 @@ main() {
     log_success "=== iOS build completed successfully ==="
     log_info ""
     log_info "Output locations:"
-    log_info "  libwebsockets: ${OUTPUT_DIR}/libwebsockets.xcframework"
-    log_info "  mbedTLS:"
-    log_info "    - ${OUTPUT_DIR}/mbedtls.xcframework"
-    log_info "    - ${OUTPUT_DIR}/mbedx509.xcframework"
-    log_info "    - ${OUTPUT_DIR}/mbedcrypto.xcframework"
+    log_info "  libwebsockets.xcframework (includes mbedtls): ${OUTPUT_DIR}/libwebsockets.xcframework"
     log_info ""
     log_info "Add to your podspec:"
     log_info "  s.vendored_frameworks = '3rdparty/output/ios/libwebsockets.xcframework'"
+    log_info ""
+    log_info "Note: mbedtls libraries are now merged into libwebsockets.xcframework"
     log_info ""
     if [ "$CLEANUP" = false ]; then
         log_info "Tip: Run '$0 --cleanup' to remove redundant files and save space"

@@ -26,7 +26,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 LWS_SOURCE="${SCRIPT_DIR}/libwebsockets"
 MBEDTLS_SOURCE="${SCRIPT_DIR}/mbedtls"
 BUILD_DIR="${SCRIPT_DIR}/build/android"
-OUTPUT_DIR="${SCRIPT_DIR}/output/android"
+OUTPUT_DIR="${SCRIPT_DIR}/output/android/libwebsockets"
 MBEDTLS_VERSION="v3.5.2"  # Compatible with libwebsockets v4.3.3
 
 # Android Settings
@@ -276,7 +276,12 @@ build_abi() {
     
     # Install
     cmake --install . --config ${BUILD_TYPE}
-    
+
+    # Copy mbedtls headers to output (needed by libwebsockets.h)
+    log_info "Copying mbedtls headers for ${ABI}..."
+    mkdir -p "${ABI_OUTPUT_DIR}/include"
+    cp -R "${MBEDTLS_OUTPUT_DIR}/include/"* "${ABI_OUTPUT_DIR}/include/"
+
     log_success "Built ${ABI}"
     cd "${SCRIPT_DIR}"
 }

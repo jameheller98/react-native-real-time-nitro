@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD 20)
 #===============================================================================
 # libwebsockets - 3rd party library
 #===============================================================================
-set(LWS_DIR ${CMAKE_SOURCE_DIR}/../3rdparty/output/android)
+set(LWS_DIR ${CMAKE_SOURCE_DIR}/../3rdparty/output/android/libwebsockets)
 
 # Create imported static library for libwebsockets
 add_library(libwebsockets STATIC IMPORTED)
