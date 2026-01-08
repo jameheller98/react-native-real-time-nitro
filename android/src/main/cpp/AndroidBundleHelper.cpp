@@ -8,13 +8,7 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 static std::string cacertPath;
-static JavaVM* javaVM = nullptr;
-
-// Called when the library is loaded
-JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
-    javaVM = vm;
-    return JNI_VERSION_1_6;
-}
+JavaVM* javaVM = nullptr;
 
 extern "C" {
   const char* getRealTimeNitroCACertPath() {

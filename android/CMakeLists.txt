@@ -16,12 +16,29 @@ set_target_properties(libwebsockets PROPERTIES
     IMPORTED_LOCATION "${LWS_DIR}/${ANDROID_ABI}/lib/libwebsockets.a"
 )
 
+# Create imported static libraries for mbedtls (required by libwebsockets)
+add_library(libmbedtls STATIC IMPORTED)
+set_target_properties(libmbedtls PROPERTIES
+    IMPORTED_LOCATION "${LWS_DIR}/${ANDROID_ABI}/lib/libmbedtls.a"
+)
+
+add_library(libmbedx509 STATIC IMPORTED)
+set_target_properties(libmbedx509 PROPERTIES
+    IMPORTED_LOCATION "${LWS_DIR}/${ANDROID_ABI}/lib/libmbedx509.a"
+)
+
+add_library(libmbedcrypto STATIC IMPORTED)
+set_target_properties(libmbedcrypto PROPERTIES
+    IMPORTED_LOCATION "${LWS_DIR}/${ANDROID_ABI}/lib/libmbedcrypto.a"
+)
+
 #===============================================================================
 # Define C++ library and add all sources
 #===============================================================================
 add_library(${PACKAGE_NAME} SHARED
     src/main/cpp/cpp-adapter.cpp
     src/main/cpp/AndroidBundleHelper.cpp
+    ../cpp/HybridWebSocket.cpp
     # Add more source files here as needed
 )
 
@@ -52,4 +69,7 @@ target_link_libraries(
     ${LOG_LIB}
     android                     # Android core
     libwebsockets               # libwebsockets static library
+    libmbedtls                  # mbedTLS library
+    libmbedx509                 # mbedTLS X.509 library
+    libmbedcrypto               # mbedTLS crypto library
 )
