@@ -1,5 +1,0 @@
-framework module libwebsockets {
-    umbrella header "libwebsockets.h"
-    export *
-    module * { export * }
-}
