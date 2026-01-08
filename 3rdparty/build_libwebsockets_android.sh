@@ -26,7 +26,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 LWS_SOURCE="${SCRIPT_DIR}/libwebsockets"
 MBEDTLS_SOURCE="${SCRIPT_DIR}/mbedtls"
 BUILD_DIR="${SCRIPT_DIR}/build/android"
-OUTPUT_DIR="${SCRIPT_DIR}/android"
+OUTPUT_DIR="${SCRIPT_DIR}/output/android"
 MBEDTLS_VERSION="v3.5.2"  # Compatible with libwebsockets v4.3.3
 
 # Android Settings
@@ -336,7 +336,7 @@ copy_headers() {
 clean() {
     log_info "Cleaning build directory..."
     rm -rf "${BUILD_DIR}"
-    rm -rf "${OUTPUT_DIR}"
+    rm -rf "${SCRIPT_DIR}/output/android"
     log_success "Clean complete"
 }
 
@@ -417,7 +417,7 @@ main() {
     log_info "Headers: ${OUTPUT_DIR}/include"
     log_info ""
     log_info "Add to your CMakeLists.txt:"
-    log_info "  include(\${CMAKE_SOURCE_DIR}/../3rdparty/android/CMakeLists.txt)"
+    log_info "  include(\${CMAKE_SOURCE_DIR}/../3rdparty/output/android/CMakeLists.txt)"
     log_info "  target_link_libraries(your_module libwebsockets)"
     log_info ""
     log_info "Tip: Use '$0 --modern-only' to skip legacy ABIs and save build time"

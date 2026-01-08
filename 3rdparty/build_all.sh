@@ -52,11 +52,11 @@ get_dir_size() {
 show_size_report() {
     log_info "=== Directory Size Report ==="
     echo ""
-    [ -d "build" ] && echo "  build/:         $(get_dir_size build)"
-    [ -d "ios" ] && echo "  ios/:           $(get_dir_size ios)"
-    [ -d "android" ] && echo "  android/:       $(get_dir_size android)"
-    [ -d "libwebsockets" ] && echo "  libwebsockets/: $(get_dir_size libwebsockets)"
-    [ -d "mbedtls" ] && echo "  mbedtls/:       $(get_dir_size mbedtls)"
+    [ -d "build" ] && echo "  build/:             $(get_dir_size build)"
+    [ -d "output/ios" ] && echo "  output/ios/:        $(get_dir_size output/ios)"
+    [ -d "output/android" ] && echo "  output/android/:    $(get_dir_size output/android)"
+    [ -d "libwebsockets" ] && echo "  libwebsockets/:     $(get_dir_size libwebsockets)"
+    [ -d "mbedtls" ] && echo "  mbedtls/:           $(get_dir_size mbedtls)"
     echo ""
     echo "Tip: Run '$0 --clean-build' to remove build/ intermediates (~100MB)"
 }
@@ -129,7 +129,7 @@ main() {
     if [ "$CLEAN" = true ]; then
         log_info "Cleaning all build artifacts and outputs..."
         ./build_mbedtls.sh --clean 2>/dev/null || true
-        rm -rf build ios android
+        rm -rf build output
         log_success "Clean complete"
         exit 0
     fi
@@ -193,14 +193,14 @@ main() {
     log_info ""
     log_info "Output locations:"
     if [ "$BUILD_IOS" = true ]; then
-        log_info "  iOS libwebsockets: ${SCRIPT_DIR}/ios/libwebsockets.xcframework"
+        log_info "  iOS libwebsockets: ${SCRIPT_DIR}/output/ios/libwebsockets.xcframework"
         log_info "  iOS mbedTLS XCFrameworks:"
-        log_info "    - ${SCRIPT_DIR}/ios/mbedtls.xcframework"
-        log_info "    - ${SCRIPT_DIR}/ios/mbedx509.xcframework"
-        log_info "    - ${SCRIPT_DIR}/ios/mbedcrypto.xcframework"
+        log_info "    - ${SCRIPT_DIR}/output/ios/mbedtls.xcframework"
+        log_info "    - ${SCRIPT_DIR}/output/ios/mbedx509.xcframework"
+        log_info "    - ${SCRIPT_DIR}/output/ios/mbedcrypto.xcframework"
     fi
     if [ "$BUILD_ANDROID" = true ]; then
-        log_info "  Android:           ${SCRIPT_DIR}/android/"
+        log_info "  Android:           ${SCRIPT_DIR}/output/android/"
     fi
 
     if [ "$AUTO_CLEANUP" = false ]; then

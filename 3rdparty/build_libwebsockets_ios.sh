@@ -29,12 +29,12 @@ MBEDTLS_VERSION="v3.5.2"
 MBEDTLS_SOURCE="${SCRIPT_DIR}/mbedtls"
 MBEDTLS_REPO="https://github.com/Mbed-TLS/mbedtls.git"
 MBEDTLS_BUILD_DIR="${SCRIPT_DIR}/build/mbedtls-ios"
-MBEDTLS_OUTPUT_DIR="${SCRIPT_DIR}/ios/mbedtls"
+MBEDTLS_OUTPUT_DIR="${SCRIPT_DIR}/output/ios/mbedtls"
 
 # libwebsockets Configuration
 LWS_SOURCE="${SCRIPT_DIR}/libwebsockets"
 LWS_BUILD_DIR="${SCRIPT_DIR}/build/ios"
-OUTPUT_DIR="${SCRIPT_DIR}/ios"
+OUTPUT_DIR="${SCRIPT_DIR}/output/ios"
 
 # iOS Settings
 IOS_DEPLOYMENT_TARGET="13.0"
@@ -459,7 +459,7 @@ clean() {
     log_info "Cleaning iOS build directories..."
     rm -rf "${LWS_BUILD_DIR}"
     rm -rf "${MBEDTLS_BUILD_DIR}"
-    rm -rf "${OUTPUT_DIR}"
+    rm -rf "${SCRIPT_DIR}/output/ios"
     rm -rf "${MBEDTLS_SOURCE}"
     log_success "Clean complete"
 }
@@ -542,7 +542,7 @@ main() {
     log_info "    - ${OUTPUT_DIR}/mbedcrypto.xcframework"
     log_info ""
     log_info "Add to your podspec:"
-    log_info "  s.vendored_frameworks = '3rdparty/ios/libwebsockets.xcframework'"
+    log_info "  s.vendored_frameworks = '3rdparty/output/ios/libwebsockets.xcframework'"
     log_info ""
     if [ "$CLEANUP" = false ]; then
         log_info "Tip: Run '$0 --cleanup' to remove redundant files and save space"
