@@ -81,3 +81,6 @@ lib/
 .eslintcache
 .cache
 *.tsbuildinfo
+
+# 3rdparty build outputs
+3rdparty/output/
