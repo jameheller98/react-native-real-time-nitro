@@ -1,7 +1,3 @@
-# Downloaded source code (only at 3rdparty root level)
-/libwebsockets/
-/mbedtls/
-
 # Build artifacts
 build/
 
