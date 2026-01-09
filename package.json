@@ -1,6 +1,6 @@
 {
   "name": "react-native-real-time-nitro",
-  "version": "1.5.1",
+  "version": "1.5.0",
   "description": "react-native-real-time-nitro",
   "main": "lib/index",
   "module": "lib/index",
