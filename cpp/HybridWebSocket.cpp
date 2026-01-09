@@ -281,6 +281,9 @@ void HybridWebSocket::serviceLoop() {
   const int MAX_IDLE_COUNT = 10;
   const int MAX_TIMEOUT = 50; // Max 50ms when idle
 
+  // Initialize ping timer
+  _lastPingTime = std::chrono::steady_clock::now();
+
   while (_running && _context) {
     // Service the connection with adaptive timeout
     int result = lws_service(_context, pollTimeout);
@@ -298,6 +301,23 @@ void HybridWebSocket::serviceLoop() {
     } else {
       idleCount = 0;
       pollTimeout = 1; // Reset to low latency when active
+    }
+
+    // Send ping if interval has elapsed
+    if (_wsi && _state == State::OPEN && _pingIntervalMs > 0) {
+      auto now = std::chrono::steady_clock::now();
+      auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - _lastPingTime).count();
+
+      if (elapsed >= _pingIntervalMs) {
+        // Send ping frame using libwebsockets
+        unsigned char ping_payload[LWS_PRE + 125]; // Max ping payload is 125 bytes
+        lws_write(_wsi, ping_payload + LWS_PRE, 0, LWS_WRITE_PING);
+        _lastPingTime = now;
+
+        #ifdef DEBUG
+        printf("[WebSocket] Sent ping (interval: %dms)\n", _pingIntervalMs);
+        #endif
+      }
     }
 
     // Process send queue - BATCH PROCESS multiple messages
@@ -464,14 +484,8 @@ void HybridWebSocket::cleanup() {
 
 void HybridWebSocket::setPingInterval(double intervalMs) {
   _pingIntervalMs = static_cast<int>(intervalMs);
-
-  if (_wsi && intervalMs > 0) {
-    lws_set_timeout(
-      _wsi,
-      PENDING_TIMEOUT_USER_OK,
-      static_cast<int>(intervalMs / 1000)
-    );
-  }
+  // Note: Actual ping sending is handled in the service loop
+  // We do NOT use lws_set_timeout here as that would close the connection
 }
 
 void HybridWebSocket::setCAPath(const std::string& path) {
@@ -639,7 +653,23 @@ int HybridWebSocket::websocketCallback(
       // Ready to write more data
       break;
     }
-      
+
+    case LWS_CALLBACK_WS_PEER_INITIATED_CLOSE: {
+      // Server initiated close
+      #ifdef DEBUG
+      printf("[WebSocket] Server initiated close\n");
+      #endif
+      break;
+    }
+
+    case LWS_CALLBACK_CLIENT_RECEIVE_PONG: {
+      // Received pong response (libwebsockets handles this automatically)
+      #ifdef DEBUG
+      printf("[WebSocket] Received pong\n");
+      #endif
+      break;
+    }
+
     case LWS_CALLBACK_WSI_DESTROY: {
       // Connection being destroyed
       if (userData) {

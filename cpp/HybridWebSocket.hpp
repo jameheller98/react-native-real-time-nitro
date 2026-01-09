@@ -186,6 +186,12 @@ private:
   std::string _caPath;  // CA certificate path (empty = disable verification)
 
   // ============================================================
+  // Ping/Pong tracking
+  // ============================================================
+
+  std::chrono::steady_clock::time_point _lastPingTime;
+
+  // ============================================================
   // Buffer pool for reducing allocations
   // ============================================================
 
