@@ -236,15 +236,16 @@ ws.close(1000, 'Normal closure')
 </details>
 
 <details>
-<summary><strong>💓 setPingInterval(seconds: number): void</strong></summary>
+<summary><strong>💓 setPingInterval(intervalMs: number): void</strong></summary>
 
 <br/>
 
-Set keep-alive ping interval.
+Set keep-alive ping interval in milliseconds.
 
 **Example:**
 ```typescript
-ws.setPingInterval(30) // ping every 30 seconds
+ws.setPingInterval(30000) // ping every 30 seconds
+ws.setPingInterval(8000)  // ping every 8 seconds
 ```
 
 </details>
@@ -396,8 +397,8 @@ await ws.connect('wss://dev-server.com')
 ```typescript
 const ws = createWebSocket()
 
-// Send ping every 30 seconds
-ws.setPingInterval(30)
+// Send ping every 30 seconds (30000 milliseconds)
+ws.setPingInterval(30000)
 
 await ws.connect('wss://server.com')
 ```
