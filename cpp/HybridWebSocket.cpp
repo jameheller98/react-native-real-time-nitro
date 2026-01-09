@@ -132,10 +132,7 @@ std::shared_ptr<Promise<void>> HybridWebSocket::connect(
     info.gid = -1;
     info.uid = -1;
     info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
-
-    // Disable libwebsockets' automatic ping/pong (we handle it manually)
-    info.ws_ping_pong_interval = 0;
-
+    
     // For client connections, SSL/TLS configuration is done at connection time
     // using LCCSCF_* flags in lws_client_connect_info (see below)
 
