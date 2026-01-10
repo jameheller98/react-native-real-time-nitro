@@ -189,16 +189,7 @@ private:
   // Ping/Pong tracking
   // ============================================================
 
-  std::chrono::steady_clock::time_point _lastPingTime;
-
-  // ============================================================
-  // Buffer pool for reducing allocations
-  // ============================================================
-
-  std::vector<std::vector<uint8_t>> _bufferPool;
-  std::mutex _bufferPoolMutex;
-  static constexpr size_t MAX_POOLED_BUFFERS = 10;
-  static constexpr size_t BUFFER_SIZE = 4096;
+  std::atomic<bool> _pingPending{false};
 
   // ============================================================
   // Performance metrics (atomic for lock-free reads)
@@ -239,16 +230,6 @@ private:
     void* in,
     size_t len
   );
-
-  /**
-   * Get buffer from pool or allocate new one
-   */
-  std::vector<uint8_t> getBuffer(size_t size);
-
-  /**
-   * Return buffer to pool for reuse
-   */
-  void returnBuffer(std::vector<uint8_t>&& buffer);
 };
 
 } // namespace margelo::nitro::realtimenitro

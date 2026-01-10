@@ -132,7 +132,7 @@ std::shared_ptr<Promise<void>> HybridWebSocket::connect(
     info.gid = -1;
     info.uid = -1;
     info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
-    
+
     // For client connections, SSL/TLS configuration is done at connection time
     // using LCCSCF_* flags in lws_client_connect_info (see below)
 
@@ -281,9 +281,6 @@ void HybridWebSocket::serviceLoop() {
   const int MAX_IDLE_COUNT = 10;
   const int MAX_TIMEOUT = 50; // Max 50ms when idle
 
-  // Initialize ping timer
-  _lastPingTime = std::chrono::steady_clock::now();
-
   while (_running && _context) {
     // Service the connection with adaptive timeout
     int result = lws_service(_context, pollTimeout);
@@ -301,23 +298,6 @@ void HybridWebSocket::serviceLoop() {
     } else {
       idleCount = 0;
       pollTimeout = 1; // Reset to low latency when active
-    }
-
-    // Send ping if interval has elapsed
-    if (_wsi && _state == State::OPEN && _pingIntervalMs > 0) {
-      auto now = std::chrono::steady_clock::now();
-      auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - _lastPingTime).count();
-
-      if (elapsed >= _pingIntervalMs) {
-        // Send ping frame using libwebsockets
-        unsigned char ping_payload[LWS_PRE + 125]; // Max ping payload is 125 bytes
-        lws_write(_wsi, ping_payload + LWS_PRE, 0, LWS_WRITE_PING);
-        _lastPingTime = now;
-
-        #ifdef DEBUG
-        printf("[WebSocket] Sent ping (interval: %dms)\n", _pingIntervalMs);
-        #endif
-      }
     }
 
     // Process send queue - BATCH PROCESS multiple messages
@@ -553,6 +533,13 @@ int HybridWebSocket::websocketCallback(
       // Connection established
       ws->_state = State::OPEN;
 
+      if (ws->_pingIntervalMs > 0) {
+        lws_set_timer_usecs(
+          wsi,
+          ws->_pingIntervalMs * 1000
+        );
+      }
+
       #ifdef DEBUG
       printf("[WebSocket] Connection established successfully!\n");
       #endif
@@ -650,6 +637,16 @@ int HybridWebSocket::websocketCallback(
     }
       
     case LWS_CALLBACK_CLIENT_WRITEABLE: {
+      // Send ping only if timer triggered it (atomic exchange clears flag)
+      if (ws->_pingPending.exchange(false, std::memory_order_relaxed)) {
+        // Send ping frame with empty payload
+        unsigned char ping_payload[LWS_PRE];
+        lws_write(wsi, &ping_payload[LWS_PRE], 0, LWS_WRITE_PING);
+
+        #ifdef DEBUG
+        printf("[WebSocket] Ping sent (interval: %dms)\n", ws->_pingIntervalMs);
+        #endif
+      }
       // Ready to write more data
       break;
     }
@@ -677,45 +674,29 @@ int HybridWebSocket::websocketCallback(
       }
       break;
     }
+
+    case LWS_CALLBACK_TIMER: {
+      if (ws->_state == State::OPEN && ws->_pingIntervalMs > 0) {
+        // Mark that a ping is pending
+        ws->_pingPending.store(true, std::memory_order_relaxed);
+
+        // Request callback when socket is writable
+        lws_callback_on_writable(wsi);
+
+        // Reschedule timer for next ping
+        lws_set_timer_usecs(
+          wsi,
+          ws->_pingIntervalMs * 1000
+        );
+      }
+      break;
+    }
       
     default:
       break;
   }
   
   return 0;
-}
-
-// ============================================================
-// Buffer Pool Implementation
-// ============================================================
-
-std::vector<uint8_t> HybridWebSocket::getBuffer(size_t size) {
-  std::lock_guard<std::mutex> lock(_bufferPoolMutex);
-
-  // Try to reuse a buffer from the pool if available
-  if (!_bufferPool.empty() && _bufferPool.back().capacity() >= size) {
-    auto buffer = std::move(_bufferPool.back());
-    _bufferPool.pop_back();
-    buffer.resize(size);
-    return buffer;
-  }
-
-  // Allocate new buffer if pool is empty or buffers are too small
-  std::vector<uint8_t> buffer;
-  buffer.reserve(std::max(size, BUFFER_SIZE));
-  buffer.resize(size);
-  return buffer;
-}
-
-void HybridWebSocket::returnBuffer(std::vector<uint8_t>&& buffer) {
-  std::lock_guard<std::mutex> lock(_bufferPoolMutex);
-
-  // Only return buffers to pool if we haven't exceeded the max
-  if (_bufferPool.size() < MAX_POOLED_BUFFERS) {
-    buffer.clear(); // Keep capacity, clear contents
-    _bufferPool.push_back(std::move(buffer));
-  }
-  // Otherwise just let it be destroyed
 }
 
 } // namespace margelo::nitro::realtimenitro
