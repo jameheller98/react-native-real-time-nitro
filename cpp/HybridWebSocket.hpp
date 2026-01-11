@@ -11,6 +11,8 @@
 #include <mutex>
 #include <atomic>
 #include <queue>
+#include <unordered_map>
+#include <chrono>
 
 #include <libwebsockets.h>
 
@@ -102,6 +104,16 @@ public:
    */
   void setCAPath(const std::string& path) override;
 
+  /**
+   * Get current ping latency in milliseconds
+   */
+  double getPingLatency() override;
+
+  /**
+   * Get comprehensive connection metrics
+   */
+  ConnectionMetrics getConnectionMetrics() override;
+
   // Getters
   double getState() override;
   std::string getUrl() override;
@@ -159,7 +171,20 @@ private:
 
   std::queue<QueuedMessage> _sendQueue;
   std::mutex _sendMutex;
-  
+
+  // Backpressure limits
+  static constexpr size_t MAX_QUEUE_SIZE = 1000;
+  static constexpr size_t MAX_QUEUE_BYTES = 10 * 1024 * 1024; // 10MB
+  std::atomic<size_t> _queueBytes{0};
+
+  // ============================================================
+  // Fragmentation handling (for large messages)
+  // ============================================================
+
+  std::vector<uint8_t> _fragmentBuffer;
+  bool _fragmentIsBinary = false;
+  std::mutex _fragmentMutex;
+
   // ============================================================
   // Service thread for I/O
   // ============================================================
@@ -186,10 +211,12 @@ private:
   std::string _caPath;  // CA certificate path (empty = disable verification)
 
   // ============================================================
-  // Ping/Pong tracking
+  // Ping/Pong tracking & Connection Health Monitoring
   // ============================================================
 
   std::atomic<bool> _pingPending{false};
+  std::chrono::steady_clock::time_point _lastPingTime;
+  std::atomic<int64_t> _pingLatencyMs{0};
 
   // ============================================================
   // Performance metrics (atomic for lock-free reads)

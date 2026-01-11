@@ -25,7 +25,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 # Configuration
 #===============================================================================
 # mbedTLS Configuration
-MBEDTLS_VERSION="v3.5.2"
+MBEDTLS_VERSION="v3.6.4"
 MBEDTLS_SOURCE="${SCRIPT_DIR}/mbedtls"
 MBEDTLS_REPO="https://github.com/Mbed-TLS/mbedtls.git"
 MBEDTLS_BUILD_DIR="${SCRIPT_DIR}/build/mbedtls-ios"
@@ -260,6 +260,19 @@ patch_libwebsockets_cmake() {
     if grep -q "cmake_minimum_required(VERSION 2.8.12)" "${CMAKE_FILE}"; then
         sed -i.bak 's/cmake_minimum_required(VERSION 2.8.12)/cmake_minimum_required(VERSION 3.5)/' "${CMAKE_FILE}"
         log_success "Patched CMake version requirement"
+    fi
+
+    # Patch lws-genhash.c to use mbedtls_md_setup (modern API) instead of deprecated mbedtls_md_init_ctx
+    local GENHASH_FILE="${LWS_SOURCE}/lib/tls/mbedtls/lws-genhash.c"
+    if [ -f "${GENHASH_FILE}" ]; then
+        if grep -q "mbedtls_md_init_ctx" "${GENHASH_FILE}"; then
+            log_info "Patching lws-genhash.c to use mbedtls_md_setup API"
+            sed -i.bak '/#if !defined(LWS_HAVE_mbedtls_md_setup)/,/#endif/c\
+	if (mbedtls_md_setup(\&ctx->ctx, ctx->hmac, 1))\
+		return -1;
+' "${GENHASH_FILE}"
+            log_success "Patched mbedtls API compatibility"
+        fi
     fi
 }
 

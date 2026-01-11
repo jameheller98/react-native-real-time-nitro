@@ -25,6 +25,5 @@ export function createWebSocket(): WebSocket {
 }
 
 // Re-export types
-export type { WebSocket } from './specs/WebSocket.nitro'
+export type { WebSocket, ConnectionMetrics } from './specs/WebSocket.nitro'
 export { WebSocketState } from './specs/WebSocket.nitro'
-export type { WebSocketOptions } from './specs/WebSocket.nitro'

@@ -164,13 +164,14 @@ std::shared_ptr<Promise<void>> HybridWebSocket::connect(
 
     // Enable per-message-deflate compression extension
     // This can reduce bandwidth by 60-80% for text messages
+    // Optimized for mobile: smaller window size (12 instead of 15) saves 28KB per connection
     static const struct lws_extension extensions[] = {
       {
         "permessage-deflate",
         lws_extension_callback_pm_deflate,
         "permessage-deflate"
         "; client_no_context_takeover"
-        "; client_max_window_bits"
+        "; client_max_window_bits=12"  // Smaller window for mobile (saves memory)
       },
       { nullptr, nullptr, nullptr }
     };
@@ -214,6 +215,9 @@ std::shared_ptr<Promise<void>> HybridWebSocket::connect(
     // SSL configuration
     if (_useSsl) {
       ccinfo.ssl_connection = LCCSCF_USE_SSL;
+#ifdef LCCSCF_USE_TLS13
+      ccinfo.ssl_connection |= LCCSCF_USE_TLS13;
+#endif
 
       if (_caPath.empty()) {
         // No CA certificate - disable verification (insecure, for development only)
@@ -275,29 +279,15 @@ std::shared_ptr<Promise<void>> HybridWebSocket::connect(
 // ============================================================
 
 void HybridWebSocket::serviceLoop() {
-  // Adaptive polling: start aggressive, back off when idle
-  int pollTimeout = 1; // Start with 1ms for low latency
-  int idleCount = 0;
-  const int MAX_IDLE_COUNT = 10;
-  const int MAX_TIMEOUT = 50; // Max 50ms when idle
-
+  // Let libwebsockets automatically determine the optimal timeout
+  // based on internal timers, pending writes, and connection state
+  // (more efficient than manual adaptive polling)
   while (_running && _context) {
-    // Service the connection with adaptive timeout
-    int result = lws_service(_context, pollTimeout);
+    // Service with auto timeout (0 = libwebsockets decides)
+    int result = lws_service(_context, 0);
 
     if (result < 0) {
       break; // Service error
-    }
-
-    // Adaptive polling: increase timeout when idle to save CPU
-    if (result == 0) {
-      idleCount++;
-      if (idleCount > MAX_IDLE_COUNT && pollTimeout < MAX_TIMEOUT) {
-        pollTimeout = std::min(pollTimeout * 2, MAX_TIMEOUT);
-      }
-    } else {
-      idleCount = 0;
-      pollTimeout = 1; // Reset to low latency when active
     }
 
     // Process send queue - BATCH PROCESS multiple messages
@@ -308,11 +298,15 @@ void HybridWebSocket::serviceLoop() {
         continue; // Skip this iteration if locked
       }
 
-      // Process up to 64 messages per iteration (increased batch size)
+      // Adaptive batching: process many small messages or fewer large messages
       int batchCount = 0;
+      size_t batchBytes = 0;
       const int MAX_BATCH_SIZE = 64;
+      const size_t MAX_BATCH_BYTES = 256 * 1024; // 256KB per batch
 
-      while (!_sendQueue.empty() && batchCount < MAX_BATCH_SIZE) {
+      while (!_sendQueue.empty() &&
+             batchCount < MAX_BATCH_SIZE &&
+             batchBytes < MAX_BATCH_BYTES) {
         auto& msg = _sendQueue.front();
 
         // Prepare buffer with LWS_PRE padding
@@ -336,8 +330,15 @@ void HybridWebSocket::serviceLoop() {
         lock.lock();
 
         if (written == static_cast<int>(msg.data.size())) {
-          _sendQueue.pop();
+          // Decrement queue bytes counter
+          _queueBytes.fetch_sub(msg.data.size());
+
+          // Track batch progress
+          batchBytes += msg.data.size();
           batchCount++;
+
+          _sendQueue.pop();
+
           // Track performance metrics
           _messagesSent.fetch_add(1, std::memory_order_relaxed);
           _bytesSent.fetch_add(msg.data.size(), std::memory_order_relaxed);
@@ -366,7 +367,15 @@ void HybridWebSocket::send(const std::string& message) {
 
   {
     std::lock_guard<std::mutex> lock(_sendMutex);
+
+    // Backpressure: check queue limits
+    if (_sendQueue.size() >= MAX_QUEUE_SIZE ||
+        _queueBytes.load() >= MAX_QUEUE_BYTES) {
+      throw std::runtime_error("Send queue full - connection too slow");
+    }
+
     _sendQueue.push(std::move(msg));
+    _queueBytes.fetch_add(msg.data.size());
   }
 
   // Wake up service thread only if needed (when idle)
@@ -391,7 +400,15 @@ void HybridWebSocket::sendBinary(const std::shared_ptr<ArrayBuffer>& data) {
 
   {
     std::lock_guard<std::mutex> lock(_sendMutex);
+
+    // Backpressure: check queue limits
+    if (_sendQueue.size() >= MAX_QUEUE_SIZE ||
+        _queueBytes.load() >= MAX_QUEUE_BYTES) {
+      throw std::runtime_error("Send queue full - connection too slow");
+    }
+
     _sendQueue.push(std::move(msg));
+    _queueBytes.fetch_add(msg.data.size());
   }
 
   // Wake up service thread
@@ -451,10 +468,18 @@ void HybridWebSocket::cleanup() {
   
   _wsi = nullptr;
   _state = State::CLOSED;
-  
-  std::lock_guard<std::mutex> lock(_sendMutex);
-  while (!_sendQueue.empty()) {
-    _sendQueue.pop();
+
+  {
+    std::lock_guard<std::mutex> lock(_sendMutex);
+    while (!_sendQueue.empty()) {
+      _sendQueue.pop();
+    }
+    _queueBytes.store(0);
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(_fragmentMutex);
+    _fragmentBuffer.clear();
   }
 }
 
@@ -510,6 +535,28 @@ void HybridWebSocket::setOnClose(
   _onClose = value;
 }
 
+double HybridWebSocket::getPingLatency() {
+  return static_cast<double>(_pingLatencyMs.load(std::memory_order_relaxed));
+}
+
+ConnectionMetrics HybridWebSocket::getConnectionMetrics() {
+  double queueSize;
+  {
+    std::lock_guard<std::mutex> lock(_sendMutex);
+    queueSize = static_cast<double>(_sendQueue.size());
+  }
+
+  return ConnectionMetrics(
+    static_cast<double>(_messagesSent.load(std::memory_order_relaxed)),
+    static_cast<double>(_messagesReceived.load(std::memory_order_relaxed)),
+    static_cast<double>(_bytesSent.load(std::memory_order_relaxed)),
+    static_cast<double>(_bytesReceived.load(std::memory_order_relaxed)),
+    static_cast<double>(_pingLatencyMs.load(std::memory_order_relaxed)),
+    queueSize,
+    static_cast<double>(_queueBytes.load(std::memory_order_relaxed))
+  );
+}
+
 // ============================================================
 // LibWebSockets Callback Handler
 // ============================================================
@@ -557,45 +604,107 @@ int HybridWebSocket::websocketCallback(
       
     case LWS_CALLBACK_CLIENT_RECEIVE: {
       bool isBinary = lws_frame_is_binary(wsi);
+      bool isFirstFragment = lws_is_first_fragment(wsi);
+      bool isFinalFragment = lws_is_final_fragment(wsi);
 
       // Track performance metrics
-      ws->_messagesReceived.fetch_add(1, std::memory_order_relaxed);
       ws->_bytesReceived.fetch_add(len, std::memory_order_relaxed);
 
-      if (isBinary) {
-        // Binary message - use static factory method
-        auto buffer = ArrayBuffer::copy(static_cast<const uint8_t*>(in), len);
+      // Handle fragmented messages (better memory usage for large messages >64KB)
+      if (!isFirstFragment || !isFinalFragment) {
+        std::lock_guard<std::mutex> fragLock(ws->_fragmentMutex);
 
-        // Optimize: check if callback exists before locking
-        std::unique_lock<std::mutex> lock(ws->_callbackMutex, std::defer_lock);
-        if (lock.try_lock() && ws->_onBinaryMessage.has_value()) {
-          try {
-            // Copy callback to minimize critical section
-            auto callback = ws->_onBinaryMessage.value();
-            lock.unlock();
-            // Execute outside of lock
-            callback(buffer);
-          } catch (...) {
-            // Catch exceptions from JS callback
+        if (isFirstFragment) {
+          // First fragment - reset buffer and pre-allocate intelligently
+          ws->_fragmentBuffer.clear();
+
+          // Smart pre-allocation: assume average fragmented message is 128KB
+          // (most fragmented messages are large images/files)
+          // This reduces reallocation overhead
+          size_t estimatedSize = std::max(len * 4, static_cast<size_t>(128 * 1024));
+          ws->_fragmentBuffer.reserve(estimatedSize);
+          ws->_fragmentIsBinary = isBinary;
+
+          #ifdef DEBUG
+          printf("[WebSocket] First fragment received, pre-allocated %zu bytes\n", estimatedSize);
+          #endif
+        }
+
+        // Accumulate fragment
+        const uint8_t* data = static_cast<const uint8_t*>(in);
+        ws->_fragmentBuffer.insert(ws->_fragmentBuffer.end(), data, data + len);
+
+        if (isFinalFragment) {
+          // Final fragment - deliver complete message
+          ws->_messagesReceived.fetch_add(1, std::memory_order_relaxed);
+
+          if (ws->_fragmentIsBinary) {
+            auto buffer = ArrayBuffer::copy(ws->_fragmentBuffer.data(), ws->_fragmentBuffer.size());
+
+            std::unique_lock<std::mutex> lock(ws->_callbackMutex, std::defer_lock);
+            if (lock.try_lock() && ws->_onBinaryMessage.has_value()) {
+              try {
+                auto callback = ws->_onBinaryMessage.value();
+                lock.unlock();
+                callback(buffer);
+              } catch (...) {}
+            }
+          } else {
+            std::string message(ws->_fragmentBuffer.begin(), ws->_fragmentBuffer.end());
+
+            std::unique_lock<std::mutex> lock(ws->_callbackMutex, std::defer_lock);
+            if (lock.try_lock() && ws->_onMessage.has_value()) {
+              try {
+                auto callback = ws->_onMessage.value();
+                lock.unlock();
+                callback(message);
+              } catch (...) {}
+            }
           }
+
+          // Clear buffer after delivery and free memory
+          // Using swap trick to force deallocation
+          std::vector<uint8_t>().swap(ws->_fragmentBuffer);
         }
       } else {
-        // Text message - reserve space for better performance
-        std::string message;
-        message.reserve(len);
-        message.assign(static_cast<char*>(in), len);
+        // Complete message in single frame (most common case)
+        ws->_messagesReceived.fetch_add(1, std::memory_order_relaxed);
 
-        // Optimize: check if callback exists before locking
-        std::unique_lock<std::mutex> lock(ws->_callbackMutex, std::defer_lock);
-        if (lock.try_lock() && ws->_onMessage.has_value()) {
-          try {
-            // Copy callback to minimize critical section
-            auto callback = ws->_onMessage.value();
-            lock.unlock();
-            // Execute outside of lock
-            callback(message);
-          } catch (...) {
-            // Catch exceptions from JS callback
+        if (isBinary) {
+          // Binary message - use static factory method
+          auto buffer = ArrayBuffer::copy(static_cast<const uint8_t*>(in), len);
+
+          // Optimize: check if callback exists before locking
+          std::unique_lock<std::mutex> lock(ws->_callbackMutex, std::defer_lock);
+          if (lock.try_lock() && ws->_onBinaryMessage.has_value()) {
+            try {
+              // Copy callback to minimize critical section
+              auto callback = ws->_onBinaryMessage.value();
+              lock.unlock();
+              // Execute outside of lock
+              callback(buffer);
+            } catch (...) {
+              // Catch exceptions from JS callback
+            }
+          }
+        } else {
+          // Text message - reserve space for better performance
+          std::string message;
+          message.reserve(len);
+          message.assign(static_cast<char*>(in), len);
+
+          // Optimize: check if callback exists before locking
+          std::unique_lock<std::mutex> lock(ws->_callbackMutex, std::defer_lock);
+          if (lock.try_lock() && ws->_onMessage.has_value()) {
+            try {
+              // Copy callback to minimize critical section
+              auto callback = ws->_onMessage.value();
+              lock.unlock();
+              // Execute outside of lock
+              callback(message);
+            } catch (...) {
+              // Catch exceptions from JS callback
+            }
           }
         }
       }
@@ -610,14 +719,47 @@ int HybridWebSocket::websocketCallback(
         std::string(static_cast<char*>(in)) :
         "Connection error";
 
+      // Enhanced error diagnostics - categorize common error types
+      std::string detailedError = error;
+      std::string errorCategory;
+
+      if (error.find("SSL") != std::string::npos ||
+          error.find("TLS") != std::string::npos ||
+          error.find("certificate") != std::string::npos) {
+        errorCategory = "SSL/TLS Error";
+        detailedError += " (SSL/TLS handshake failed - check certificate validity and CA path)";
+      } else if (error.find("timeout") != std::string::npos ||
+                 error.find("Timeout") != std::string::npos) {
+        errorCategory = "Timeout Error";
+        detailedError += " (Connection timeout - check network connectivity and server availability)";
+      } else if (error.find("DNS") != std::string::npos ||
+                 error.find("resolve") != std::string::npos ||
+                 error.find("getaddrinfo") != std::string::npos) {
+        errorCategory = "DNS Error";
+        detailedError += " (DNS resolution failed - check hostname and network)";
+      } else if (error.find("refused") != std::string::npos ||
+                 error.find("Refused") != std::string::npos) {
+        errorCategory = "Connection Refused";
+        detailedError += " (Server refused connection - check server is running and port is correct)";
+      } else if (error.find("unreachable") != std::string::npos) {
+        errorCategory = "Network Unreachable";
+        detailedError += " (Network unreachable - check network connectivity)";
+      } else {
+        errorCategory = "Connection Error";
+      }
+
       // Always log connection errors to help debugging
-      printf("[WebSocket] CONNECTION ERROR: %s\n", error.c_str());
-      printf("[WebSocket] URL was: %s\n", ws->_url.c_str());
+      printf("[WebSocket] ========================================\n");
+      printf("[WebSocket] CONNECTION ERROR\n");
+      printf("[WebSocket] Category: %s\n", errorCategory.c_str());
+      printf("[WebSocket] Details: %s\n", detailedError.c_str());
+      printf("[WebSocket] URL: %s\n", ws->_url.c_str());
+      printf("[WebSocket] ========================================\n");
 
       std::lock_guard<std::mutex> lock(ws->_callbackMutex);
       if (ws->_onError.has_value()) {
         try {
-          ws->_onError.value()(error);
+          ws->_onError.value()(detailedError);
         } catch (...) {}
       }
       break;
@@ -639,6 +781,9 @@ int HybridWebSocket::websocketCallback(
     case LWS_CALLBACK_CLIENT_WRITEABLE: {
       // Send ping only if timer triggered it (atomic exchange clears flag)
       if (ws->_pingPending.exchange(false, std::memory_order_relaxed)) {
+        // Record ping send time for latency tracking
+        ws->_lastPingTime = std::chrono::steady_clock::now();
+
         // Send ping frame with empty payload
         unsigned char ping_payload[LWS_PRE];
         lws_write(wsi, &ping_payload[LWS_PRE], 0, LWS_WRITE_PING);
@@ -660,9 +805,17 @@ int HybridWebSocket::websocketCallback(
     }
 
     case LWS_CALLBACK_CLIENT_RECEIVE_PONG: {
-      // Received pong response (libwebsockets handles this automatically)
+      // Received pong response - calculate latency for connection health monitoring
+      auto now = std::chrono::steady_clock::now();
+      auto latency = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now - ws->_lastPingTime
+      ).count();
+
+      // Store latency metric
+      ws->_pingLatencyMs.store(latency, std::memory_order_relaxed);
+
       #ifdef DEBUG
-      printf("[WebSocket] Received pong\n");
+      printf("[WebSocket] Received pong (latency: %lldms)\n", latency);
       #endif
       break;
     }

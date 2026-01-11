@@ -23,7 +23,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 #===============================================================================
 # Library Versions - Update these as needed
 #===============================================================================
-LIBWEBSOCKETS_VERSION="v4.3.3"
+LIBWEBSOCKETS_VERSION="v4.5.2"
 LIBWEBSOCKETS_REPO="https://github.com/warmcat/libwebsockets.git"
 
 # Optional: OpenSSL for TLS support

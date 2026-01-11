@@ -13,7 +13,8 @@
 #error NitroModules cannot be found! Are you sure you installed NitroModules properly?
 #endif
 
-
+// Forward declaration of `ConnectionMetrics` to properly resolve imports.
+namespace margelo::nitro::realtimenitro { struct ConnectionMetrics; }
 
 #include <string>
 #include <functional>
@@ -21,6 +22,7 @@
 #include <NitroModules/ArrayBuffer.hpp>
 #include <NitroModules/Promise.hpp>
 #include <vector>
+#include "ConnectionMetrics.hpp"
 
 namespace margelo::nitro::realtimenitro {
 
@@ -70,6 +72,8 @@ namespace margelo::nitro::realtimenitro {
       virtual void close(std::optional<double> code, const std::optional<std::string>& reason) = 0;
       virtual void setPingInterval(double intervalMs) = 0;
       virtual void setCAPath(const std::string& path) = 0;
+      virtual double getPingLatency() = 0;
+      virtual ConnectionMetrics getConnectionMetrics() = 0;
 
     protected:
       // Hybrid Setup

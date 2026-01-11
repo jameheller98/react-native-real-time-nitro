@@ -11,26 +11,6 @@ export enum WebSocketState {
 }
 
 /**
- * WebSocket connection options
- */
-export interface WebSocketOptions {
-  /**
-   * Sub-protocols to use
-   */
-  protocols?: string[]
-
-  /**
-   * Headers to send with handshake
-   */
-  headers?: Record<string, string>
-
-  /**
-   * Timeout for connection in milliseconds
-   */
-  timeout?: number
-}
-
-/**
  * High-performance WebSocket client
  *
  * @example
@@ -140,4 +120,58 @@ export interface WebSocket extends HybridObject<{
    *              Pass empty string to disable certificate verification
    */
   setCAPath(path: string): void
+
+  /**
+   * Get current ping/pong latency in milliseconds
+   *
+   * @returns Latency in milliseconds (0 if no ping/pong completed yet)
+   */
+  getPingLatency(): number
+
+  /**
+   * Get comprehensive connection metrics
+   *
+   * @returns Object containing performance metrics
+   */
+  getConnectionMetrics(): ConnectionMetrics
+}
+
+/**
+ * Connection performance metrics
+ */
+export interface ConnectionMetrics {
+  /**
+   * Total messages sent
+   */
+  messagesSent: number
+
+  /**
+   * Total messages received
+   */
+  messagesReceived: number
+
+  /**
+   * Total bytes sent
+   */
+  bytesSent: number
+
+  /**
+   * Total bytes received
+   */
+  bytesReceived: number
+
+  /**
+   * Current ping latency in milliseconds (0 if unavailable)
+   */
+  pingLatencyMs: number
+
+  /**
+   * Current send queue size
+   */
+  queueSize: number
+
+  /**
+   * Current send queue bytes
+   */
+  queueBytes: number
 }
